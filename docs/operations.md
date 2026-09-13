@@ -37,6 +37,7 @@ Performance without these gates is diagnostic, not an accepted result.
 - Expert and Engram source: pinned host RAM; zero steady disk reads
 - Attention: `dsv4_sparse`
 - CUDA graphs: enabled with batch-size ceiling one
+- Decode route preparation: fused
 - Prompt cache: radix
 - Sampling: temperature 1.0, top-p 0.95 when a request omits them
 - Reasoning parser: `deepseekv32`; default numeric effort 25
@@ -101,7 +102,8 @@ Stop the DeepSeek service and allow it to unpin fully. Start the preserved Qwen 
 other known-good unit only after the GPUs, port, and pinned-memory tier are free.
 
 For a decode-only regression, first set `DSV41_DECODE_REFILL_OVERLAP=0` to restore
-the serial authority path. For a graph-specific fault, set `DSV41_CUDA_GRAPH=0`
-and re-run the eager oracle. Keep the accepted KV and cache geometry unchanged
-while isolating the fault. Do not enable the experimental fused router or dense TP
+the serial authority path, or set `DSV41_FUSED_ROUTE_PREP=0` to restore composed
+route localization. For a graph-specific fault, set `DSV41_CUDA_GRAPH=0` and
+re-run the eager oracle. Keep the accepted KV and cache geometry unchanged while
+isolating the fault. Do not enable the experimental fused router or dense TP
 controls in this profile.

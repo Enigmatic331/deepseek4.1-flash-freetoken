@@ -71,6 +71,13 @@ EP reduction order. This improved a matched 127-token decode control by 1.36%
 without changing 4K prefill. Set `DSV41_DECODE_REFILL_OVERLAP=0` to return to the
 serial authority path.
 
+EP ownership testing, global-to-local route conversion, peer-weight masking, and
+cache-safe inactive-id replacement are fused into one exact decode kernel. This
+reduced isolated route-preparation graph replay from 16.25 to 3.15 microseconds per
+layer and improved matched live decode by 1.04%. Set
+`DSV41_FUSED_ROUTE_PREP=0` to restore the composed tensor path. Prefill keeps its
+sentinel-aware route preparation unchanged.
+
 `--moe-prefill-hit-d2d` lets cache-resident expert rows feed prefill directly on
 their owning GPU. It improved an earlier warm 4K fixture by about 5.9% without
 changing generated output. It does not turn GPU1 into a global cache for GPU0.
