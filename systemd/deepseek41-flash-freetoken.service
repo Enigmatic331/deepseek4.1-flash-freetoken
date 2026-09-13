@@ -1,0 +1,25 @@
+[Unit]
+Description=DeepSeek V4.1 Flash official checkpoint on FreeToken EP2
+Wants=network-online.target
+After=network-online.target
+Conflicts=llama-qwen.service
+
+[Service]
+Type=exec
+User=USER
+Group=USER
+WorkingDirectory=/home/USER/models/deepseek4.1-flash-freetoken
+Environment=DSV41_CONFIG=/home/USER/.config/deepseek41-flash-freetoken.env
+ExecStart=/home/USER/models/deepseek4.1-flash-freetoken/scripts/run.sh
+Restart=on-failure
+RestartSec=30
+TimeoutStartSec=infinity
+TimeoutStopSec=5min
+LimitMEMLOCK=infinity
+LimitNOFILE=1048576
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=deepseek41-flash-freetoken
+
+[Install]
+WantedBy=multi-user.target

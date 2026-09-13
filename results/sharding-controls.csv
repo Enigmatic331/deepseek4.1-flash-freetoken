@@ -1,0 +1,4 @@
+topology,context,cache_gpu0,cache_gpu1,warm_4096_prefill_tok_s,decode_128_tok_s,correctness,disposition
+authority_ep2_p2p_on,32768,856,856,736.240,6.490,exact_control,matched_control
+full_tp2_ep2_p2p_on,32768,856,856,711.330,6.655,deterministic_but_different,rejected_for_prefill
+attention_tp2_ep2_p2p_on,32768,856,856,723.850,6.477,deterministic_but_different,research_only

@@ -1,0 +1,9 @@
+.env
+*.local
+*.log
+__pycache__/
+.venv/
+models/
+weights/
+runtime/
+results/raw/
