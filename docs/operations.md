@@ -100,6 +100,8 @@ GPU0-owned cache rows.
 Stop the DeepSeek service and allow it to unpin fully. Start the preserved Qwen or
 other known-good unit only after the GPUs, port, and pinned-memory tier are free.
 
-For a feature-level rollback, first set `DSV41_CUDA_GRAPH=0` and re-run the eager
-oracle. Keep the accepted KV and cache geometry unchanged while isolating the fault.
-Do not enable the experimental fused router or dense TP controls in this profile.
+For a decode-only regression, first set `DSV41_DECODE_REFILL_OVERLAP=0` to restore
+the serial authority path. For a graph-specific fault, set `DSV41_CUDA_GRAPH=0`
+and re-run the eager oracle. Keep the accepted KV and cache geometry unchanged
+while isolating the fault. Do not enable the experimental fused router or dense TP
+controls in this profile.

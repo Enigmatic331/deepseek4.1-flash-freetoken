@@ -64,6 +64,13 @@ Expert miss refill is the principal steady decode cost. An Nsight control attrib
 observed aggregate PCIe receive traffic. Engram injection was only about 1.87 ms per
 profiled token and is not the current decode bottleneck.
 
+The accepted decode path queues GPU0's local cache miss planning and refill on a
+side stream before its independent shared-expert projection. The compute stream
+joins before the routed GEMM, preserving cache-slot dependencies and the existing
+EP reduction order. This improved a matched 127-token decode control by 1.36%
+without changing 4K prefill. Set `DSV41_DECODE_REFILL_OVERLAP=0` to return to the
+serial authority path.
+
 `--moe-prefill-hit-d2d` lets cache-resident expert rows feed prefill directly on
 their owning GPU. It improved an earlier warm 4K fixture by about 5.9% without
 changing generated output. It does not turn GPU1 into a global cache for GPU0.

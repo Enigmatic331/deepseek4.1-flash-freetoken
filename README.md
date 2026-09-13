@@ -14,13 +14,11 @@ DSpark/MTP are outside this profile.
 - Model: `deepseek-ai/DeepSeek-V4.1-Flash`
 - Model revision: `dba1be0a40aa45a94ad051997016db3960a90277`
 - FreeToken branch: <https://github.com/Enigmatic331/FreeToken/tree/dsv41-flash>
-- Public profile revision: `50696003b7f372369c0e42b7a2662e7e3ec3cdbd`
-- Exact live-tested runtime: [`dsv41-flash-64k-v0`](https://github.com/Enigmatic331/FreeToken/tree/dsv41-flash-64k-v0) (`77795eb4736a985b064a1bd2a8e30ee842efff2e`)
+- Public profile revision: `0a52d86616f5c773bd7e8dcb8f3620c15afc0df6`
+- Exact live-tested runtime: [`dsv41-flash-64k-v1`](https://github.com/Enigmatic331/FreeToken/tree/dsv41-flash-64k-v1) (`0a52d86616f5c773bd7e8dcb8f3620c15afc0df6`)
 - Development base: `qwen38-ep2` at `19634c8e13cfb17eb347ad2a710449922acb8600`
 
-The public profile revision differs from the live-tested runtime only by
-documentation, CLI help text, and portable checkpoint-test paths. Exact pins are
-also recorded in [`freetoken.lock`](freetoken.lock).
+Exact pins are also recorded in [`freetoken.lock`](freetoken.lock).
 
 ## Accepted topology
 
@@ -32,7 +30,7 @@ CPU RAM:       pinned expert banks plus row-sharded Engram tables (~475 GiB RSS)
 Transport:     heterogeneous EP2; accepted service sets NCCL_P2P_DISABLE=1
 KV:            65,536-token DSV4.1 paged pool, 512 full pages, 0.28125 SWA ratio
 Prefill:       4,096-token scheduler chunks, D2D reuse for resident expert rows
-Decode:        one request stream, position-bucketed CUDA graphs, DSpark/MTP off
+Decode:        graph-safe authority refill/shared overlap, DSpark/MTP off
 Sampling:      temperature 1.0, top-p 0.95; explicit request values win
 Reasoning:     effort 25 by default; soft prompt control, not a token cap
 ```
@@ -54,6 +52,7 @@ official-sampling sentinel, unique 60K prompt, and 64K-near-limit capacity gate.
 | Unique long prompt | 60,000 | 1,450.57 | 13.17 | 41.363 s |
 | Near-limit capacity | 64,000 | 1,404.91 | 13.35 | 45.555 s |
 | Long-decode mean (2) | 64 | 13.06 | 16.33 | 4.900 s |
+| Refill-overlap decode mean (2) | 64 | 13.03 | 16.50 | 4.912 s |
 
 The 64K run generated 31 additional tokens and peaked at 32,120 MiB on GPU0
 and 30,560 MiB on GPU1. Driver-visible GPU0 margin was only about 31–93 MiB at
@@ -64,6 +63,10 @@ for long-prefill workspace.
 These numbers are batch-one observations from one host, not portable promises.
 Correctness gates precede all performance acceptance. Raw accepted rows are in
 [`results/accepted.csv`](results/accepted.csv).
+
+The refill-overlap row uses the same 127-token outputs as a fresh 16.28 tok/s
+control and improved decode by 1.36%; every matched output hash was byte-identical.
+The change does not alter prefill, KV capacity, cache sizes, or expert ownership.
 
 ## Cold load and memory
 
