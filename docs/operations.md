@@ -16,11 +16,11 @@ wait for its GPU memory and pinned pages to release, then start DeepSeek.
 
 ## Acceptance gate
 
-1. `/health` and `/v1/models` respond and publish a 65,536-token context.
+1. `/health` and `/v1/models` respond and publish a 262,144-token context.
 2. A thinking-disabled deterministic sentinel returns exactly once.
 3. The historical 64-token greedy oracle remains byte-identical.
-4. A unique prompt longer than one 4,096-token scheduler chunk completes cleanly.
-5. Capacity changes pass unique 60K and 64K-near-limit prompts plus generation.
+4. A unique prompt longer than one 8,192-token scheduler chunk completes cleanly.
+5. Capacity changes pass unique 128K and 260K-near-limit prompts plus generation.
 6. `/v1/stats` returns to zero active requests and zero used KV after release.
 7. Only then accept throughput or latency measurements.
 
@@ -29,11 +29,11 @@ Performance without these gates is diagnostic, not an accepted result.
 ## Qualified runtime defaults
 
 - Batch/concurrency: one
-- Advertised context: 65,536 tokens
-- Full KV: 512 pages of 128 tokens
+- Advertised context: 262,144 tokens
+- Full KV: 2,048 pages of 128 tokens
 - SWA/full-token ratio: 0.28125
-- Scheduler prefill chunk: 4,096 tokens
-- Expert caches: 704 slots on GPU0, 1,450 on GPU1
+- Scheduler prefill chunk: 8,192 tokens
+- Expert caches: 512 slots on GPU0, 1,250 on GPU1
 - Expert and Engram source: pinned host RAM; zero steady disk reads
 - Attention: `dsv4_sparse`
 - CUDA graphs: enabled with batch-size ceiling one
@@ -50,7 +50,7 @@ explicit output limit can consume all context remaining after the prompt.
 
 ## Startup and shutdown expectations
 
-A clean accepted start took about 9 minutes 40 seconds. Four serialized Engram
+A clean accepted start took about 10 minutes 2 seconds. Four serialized Engram
 source reads dominate roughly five minutes of that interval; each 47.2 GB shard
 took about 79 seconds. Stable RSS was approximately 475 GiB. Do not treat the unit
 as failed while weights are still progressing unless its logs show a real fault.
@@ -71,8 +71,8 @@ curl --fail http://172.17.0.1:8080/v1/stats
 
 ## Capacity guardrails
 
-The accepted near-limit run peaked at 32,120 MiB on GPU0 and left only about
-31–93 MiB driver-visible there after allocator high-water reservations. Do not
+The accepted near-limit run peaked at 32,146 MiB on GPU0 and left about
+461 MiB driver-visible there after allocator high-water reservations. Do not
 increase GPU0 cache slots, prefill chunk size, KV pages, graph batch size, or
 concurrency together. Change one variable, reload cleanly, and repeat both long
 capacity gates.
@@ -83,10 +83,10 @@ GPU0-owned cache rows.
 
 ## Failure triage
 
-- Startup OOM: verify the 704/1,450 cache geometry, 512 KV pages, graph batch one,
+- Startup OOM: verify the 512/1,250 cache geometry, 2,048 KV pages, graph batch one,
   and that no stale process owns either GPU.
-- Long-prefill OOM: return to a 4,096-token scheduler chunk and the 704-slot root
-  cache. Earlier 808/768-slot candidates failed at 60K.
+- Long-prefill OOM: return to the accepted 8,192-token scheduler chunk and the
+  512-slot root cache, then rerun the 128K and 260K gates.
 - Slow first request: distinguish the ten-minute bank load and one-time kernel/JIT
   work from warm request throughput.
 - Decode regression: check CUDA graph activation, expert-cache misses, PCIe traffic,

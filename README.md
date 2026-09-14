@@ -14,8 +14,8 @@ DSpark/MTP are outside this profile.
 - Model: `deepseek-ai/DeepSeek-V4.1-Flash`
 - Model revision: `dba1be0a40aa45a94ad051997016db3960a90277`
 - FreeToken branch: <https://github.com/Enigmatic331/FreeToken/tree/dsv41-flash>
-- Public profile revision: `6d1df661ea58bed676905fd18926ef7147fa097c`
-- Exact live-tested runtime: [`dsv41-flash-64k-v2`](https://github.com/Enigmatic331/FreeToken/tree/dsv41-flash-64k-v2) (`6d1df661ea58bed676905fd18926ef7147fa097c`)
+- Public profile revision: `2f761ac918fd4cf776a87ad190ba3af290fd117c`
+- Exact live-tested runtime: [`dsv41-flash-256k-v1`](https://github.com/Enigmatic331/FreeToken/tree/dsv41-flash-256k-v1) (`2f761ac918fd4cf776a87ad190ba3af290fd117c`)
 - Development base: `qwen38-ep2` at `19634c8e13cfb17eb347ad2a710449922acb8600`
 
 Exact pins are also recorded in [`freetoken.lock`](freetoken.lock).
@@ -24,12 +24,12 @@ Exact pins are also recorded in [`freetoken.lock`](freetoken.lock).
 
 ```text
 GPU0 RTX 5090: complete text backbone, shared experts, routed experts 0..191,
-               704 rank-local expert-cache slots, CUDA graph authority
-GPU1 RTX 5090: routed experts 192..383, 1,450 rank-local expert-cache slots
+               512 rank-local expert-cache slots, CUDA graph authority
+GPU1 RTX 5090: routed experts 192..383, 1,250 rank-local expert-cache slots
 CPU RAM:       pinned expert banks plus row-sharded Engram tables (~475 GiB RSS)
 Transport:     heterogeneous EP2; accepted service sets NCCL_P2P_DISABLE=1
-KV:            65,536-token DSV4.1 paged pool, 512 full pages, 0.28125 SWA ratio
-Prefill:       4,096-token scheduler chunks, D2D reuse for resident expert rows
+KV:            262,144-token DSV4.1 paged pool, 2,048 full pages, 0.28125 SWA ratio
+Prefill:       8,192-token scheduler chunks, D2D reuse for resident expert rows
 Decode:        graph-safe authority refill/shared overlap and fused EP route prep
 Sampling:      temperature 1.0, top-p 0.95; explicit request values win
 Reasoning:     effort 25 by default; soft prompt control, not a token cap
@@ -42,40 +42,39 @@ correctness constraints.
 
 ## Accepted performance
 
-The final 64K/cache-704 profile passed the historical exact-output oracle,
-official-sampling sentinel, unique 60K prompt, and 64K-near-limit capacity gate.
+The final 256K/cache-512 profile passed the historical exact-output oracle,
+unique 128K prompt, and 260K-near-limit capacity gate while retaining the
+previously qualified sampling defaults.
 
 | Case | Prompt | Prefill tok/s | Decode tok/s | TTFT |
 | --- | ---: | ---: | ---: | ---: |
-| Exact short oracle | 64 | 11.21 | 13.48 | 5.709 s |
-| Warm 4K mean (2) | 4,096 | 776.54 | 14.47 | 5.275 s |
-| Unique long prompt | 60,000 | 1,450.57 | 13.17 | 41.363 s |
-| Near-limit capacity | 64,000 | 1,404.91 | 13.35 | 45.555 s |
-| Long-decode mean (2) | 64 | 13.06 | 16.33 | 4.900 s |
-| Refill-overlap decode mean (2) | 64 | 13.03 | 16.50 | 4.912 s |
-| Fused route-prep decode mean (3) | 64 | 13.04 | 16.65 | 4.906 s |
+| Exact short oracle | 64 | 11.06 | 12.86 | 5.786 s |
+| Unique long prompt | 128,000 | 1,350.01 | 14.21 | 94.814 s |
+| Near-limit capacity | 260,000 | 1,309.53 | 12.96 | 198.545 s |
+| Post-long decode mean (3) | 64 | 12.72 | 15.14 | 5.033 s |
 
-The 64K run generated 31 additional tokens and peaked at 32,120 MiB on GPU0
-and 30,560 MiB on GPU1. Driver-visible GPU0 margin was only about 31–93 MiB at
-the allocator high-water mark. The 4K profile is approximately 2.2% slower than
-the earlier 856-slot reference because GPU0 cache capacity was deliberately traded
-for long-prefill workspace.
+The 260K run generated 31 additional tokens and peaked at 32,146 MiB on GPU0
+and 29,118 MiB on GPU1. Driver-visible GPU0 margin was about 461 MiB at the
+allocator high-water mark. The 256K profile's post-long short decode mean is
+about 9% below the prior 64K profile because expert-cache capacity was deliberately
+traded for a four-times-larger KV pool.
 
 These numbers are batch-one observations from one host, not portable promises.
 Correctness gates precede all performance acceptance. Raw accepted rows are in
 [`results/accepted.csv`](results/accepted.csv).
 
-The refill-overlap row uses the same 127-token outputs as a fresh 16.28 tok/s
-control and improved decode by 1.36%; every matched output hash was byte-identical.
+The refill-overlap optimization uses the same 127-token outputs as its control and
+improved decode by 1.36%; every matched output hash was byte-identical.
 The change does not alter prefill, KV capacity, cache sizes, or expert ownership.
-Fusing EP localization and cache-safe inactive-id preparation then improved a
+Fusing EP localization and cache-safe inactive-id preparation then improved its
 fresh matched control from 16.48 to 16.65 tok/s (+1.04%), again with byte-identical
-outputs. Repeated 4K prefill stayed neutral at 776.88 tok/s.
+outputs. Those are 64K optimization controls; the accepted 256K capacity profile
+retains both code paths but has smaller expert caches.
 
 ## Cold load and memory
 
 - Checkpoint payload: 510,286,023,000 bytes across 48 safetensor shards.
-- Ready time after a clean start: about 9 minutes 40 seconds.
+- Ready time after a clean start: about 10 minutes 2 seconds.
 - Each 47.2 GB rank-local Engram shard loaded in about 79 seconds at 640–641 MB/s.
 - Stable process RSS: roughly 475 GiB; swap remained unused.
 - Clean shutdown and unpin: roughly 1 minute 40 seconds.
@@ -100,8 +99,8 @@ launcher does not stop an existing Qwen or other GPU service for you.
 ## Safety notes
 
 - Keep concurrency at one for this qualified geometry.
-- Do not raise the 4,096-token prefill chunk or the 704-slot GPU0 expert cache
-  without repeating the 60K and 64K capacity gates.
+- Do not raise the 8,192-token prefill chunk or the 512-slot GPU0 expert cache
+  without repeating the 128K and 260K capacity gates.
 - Requalify position-bucketed graphs after driver, CUDA, allocator, BIOS, slot,
   topology, or kernel changes.
 - Reasoning effort 25 is not a reasoning-token limit. With no request output cap,

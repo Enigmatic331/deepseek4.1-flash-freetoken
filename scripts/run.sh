@@ -66,14 +66,14 @@ exec "$FREETOKEN_PYTHON" -m freetoken.cli serve \
   --tp-size 2 \
   --dsv41-backbone-rank 0 \
   --max-running-requests 1 \
-  --max-seq-len-override "${DSV41_CONTEXT:-65536}" \
-  --max-prefill-length "${DSV41_MAX_PREFILL_LENGTH:-4096}" \
-  --num-pages "${DSV41_NUM_PAGES:-512}" \
+  --max-seq-len-override "${DSV41_CONTEXT:-262144}" \
+  --max-prefill-length "${DSV41_MAX_PREFILL_LENGTH:-8192}" \
+  --num-pages "${DSV41_NUM_PAGES:-2048}" \
   --swa-full-tokens-ratio "${DSV41_SWA_FULL_TOKENS_RATIO:-0.28125}" \
   --memory-ratio "${DSV41_MEMORY_RATIO:-0.90}" \
   --cache-type "${DSV41_CACHE_TYPE:-radix}" \
   --moe-backend offload \
-  --moe-cache-sizes "${DSV41_MOE_CACHE_SIZES:-704,1450}" \
+  --moe-cache-sizes "${DSV41_MOE_CACHE_SIZES:-512,1250}" \
   "${extra_args[@]}" \
   --expert-load serial \
   --attention-backend dsv4_sparse \
