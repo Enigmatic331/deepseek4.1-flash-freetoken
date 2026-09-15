@@ -71,6 +71,29 @@ fresh matched control from 16.48 to 16.65 tok/s (+1.04%), again with byte-identi
 outputs. Those are 64K optimization controls; the accepted 256K capacity profile
 retains both code paths but has smaller expert caches.
 
+## Experimental phase-split EP3
+
+An experimental three-GPU branch keeps prefill and Engram on two RTX 5090 ranks
+while an RTX 4080 SUPER joins only as a decode-time expert worker. It uses
+overlapping host expert ranges so ownership can change from 192/192/0 during
+prefill to 160/160/64 during decode without rereading weights.
+
+- FreeToken branch: <https://github.com/Enigmatic331/FreeToken/tree/dsv41-phase-split-ep3>
+- Qualified revision: `36728d0adfca02affe19ad7e13ed888b2923473a`
+
+| Case | Accepted EP2 | Engram2/full-prefill EP3 | Phase-split EP3 |
+| --- | ---: | ---: | ---: |
+| Exact oracle | accepted | accepted | accepted |
+| 128K prefill | 1,350.01 tok/s | 677.83 tok/s | 1,247.72 tok/s |
+| 260K prefill | 1,309.53 tok/s | 659.94 tok/s | 1,188.78 tok/s |
+| Short decode | 15.14 tok/s | 17.12 tok/s | 17.07 tok/s |
+
+The split recovers most of the two-5090 prefill rate while retaining the
+auxiliary card's roughly 12.7% decode gain over EP2. Its cost is approximately
+70 GiB of additional host RSS for duplicated expert storage. This remains an
+experimental control and does not change the accepted deployment or lock file.
+Raw summary rows are in [`results/phase-split-ep3.csv`](results/phase-split-ep3.csv).
+
 ## Cold load and memory
 
 - Checkpoint payload: 510,286,023,000 bytes across 48 safetensor shards.

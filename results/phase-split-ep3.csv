@@ -1,0 +1,13 @@
+topology,case,prompt_tokens,repeats,prefill_tok_s_mean,decode_tok_s_mean,peak_gpu0_mib,peak_gpu1_mib,peak_gpu2_mib,host_rss_mib,correctness,disposition
+accepted_ep2,exact_short_oracle,64,1,11.060,12.860,26702,27656,0,475705,exact_sha256_match,accepted
+engram2_full_prefill_ep3,exact_short_oracle,64,2,14.667,15.212,26540,27464,26072,478244,exact_sha256_match,control
+phase_split_ep3,exact_short_oracle,64,2,11.875,15.238,26632,27604,26050,547090,exact_sha256_match,experimental
+accepted_ep2,unique_128000,128000,1,1350.013,14.209,31386,29116,0,475705,sanity_passed,accepted
+engram2_full_prefill_ep3,unique_128000,128000,1,677.826,15.430,31064,28924,27352,478630,sanity_passed,control
+phase_split_ep3,unique_128000,128000,1,1247.720,14.608,31776,29864,26050,547361,sanity_passed,experimental
+accepted_ep2,near_limit_260000,260000,1,1309.526,12.962,32146,29118,0,475705,sanity_passed,accepted
+engram2_full_prefill_ep3,near_limit_260000,260000,1,659.943,14.955,32124,28926,27354,478750,sanity_passed,control
+phase_split_ep3,near_limit_260000,260000,1,1188.779,14.993,32134,29866,26052,547459,sanity_passed,experimental
+accepted_ep2,short_decode_127,64,3,12.715,15.144,32124,29118,0,475705,sanity_passed,accepted
+engram2_full_prefill_ep3,short_decode_127,64,3,15.365,17.119,26540,27464,26072,478246,sanity_passed,control
+phase_split_ep3,short_decode_127,64,3,12.525,17.069,31216,29844,26050,547327,sanity_passed,experimental

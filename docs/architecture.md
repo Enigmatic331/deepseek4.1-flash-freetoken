@@ -89,6 +89,36 @@ association, and remained slower in matched 4K prefill. Neither sharded-dense
 candidate replaced authority EP2. A heterogeneous EP3/RTX 4080 experiment remains
 separate from this accepted two-rank profile.
 
+### Experimental phase-aware EP3
+
+The follow-up EP3 branch separates phase ownership from stored ownership:
+
+```text
+prefill ownership: 192 / 192 / 0
+decode ownership:  160 / 160 / 64
+stored experts:    [0,192) / [160,384) / [320,384)
+Engram ranks:      0 and 1
+```
+
+The overlapping host intervals let the two fast ranks cover all experts during
+prefill while the auxiliary rank remains idle. At decode, the auxiliary rank
+owns 64 experts and contributes its cache and bandwidth. A Gloo phase barrier
+lets the inactive rank rejoin after the two active ranks complete their compact
+prefill exchange without submitting an out-of-order NCCL collective.
+
+The original three-rank Engram path changed the historical oracle. EP2 under the
+same PyTorch NCCL transport remained exact, and test shards reassembled without
+gaps or overlaps. Restricting Engram to the two RTX 5090 ranks restored the
+accepted hash, isolating the fault boundary to the SM89 rank's participation in
+the Engram FP8 execution path. The low-level FP8 mechanism is not yet proven, so
+the experimental branch avoids that path rather than accepting numerical drift.
+
+At 256K context the phase split measured 1,247.72 tok/s at 128K and 1,188.78
+tok/s at 260K, versus 1,350.01 and 1,309.53 tok/s for accepted EP2. Short decode
+measured 17.07 tok/s versus 15.14 tok/s for EP2. The trade is approximately 70
+GiB of additional host RSS. Auxiliary heterogeneous cards should therefore be
+treated as decode expert tiers by default, not prefill ranks.
+
 ## Correctness boundary
 
 - Dense backbone, attention, and final reduction authority remain on rank 0.
