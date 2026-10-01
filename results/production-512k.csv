@@ -1,0 +1,7 @@
+case,p2p,prompt_tokens,completion_tokens,repeats,prefill_tok_s_mean,prefill_tok_s_median,decode_tok_s_mean,decode_tok_s_median,ttft_s,peak_rank0_mib,peak_rank1_mib,peak_rank2_mib,correctness
+prefill_8192,off,8192,31,5,1302.9146,1302.381,,,,,,,sanity_passed
+prefill_8192,selective_5090_pair,8192,31,5,1460.9398,1459.627,,,,,,,sanity_passed
+decode_127,off,512,127,5,,,19.1546,19.304,,,,,sanity_passed
+decode_127,selective_5090_pair,512,127,5,,,19.5224,19.573,,,,,sanity_passed
+capacity_520k,off,520000,31,1,1090.648,,14.417,,476.781,32140,29074,44429,capacity_and_sanity_passed
+capacity_520k,selective_5090_pair,520000,31,1,1207.958,,17.472,,430.479,32136,30021,45146,capacity_and_sanity_passed

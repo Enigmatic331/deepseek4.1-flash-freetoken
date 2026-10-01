@@ -2,62 +2,63 @@
 
 ## Before starting
 
-- Confirm no other model owns the selected two GPUs or port 8080.
-- Confirm FreeToken and model revisions match `freetoken.lock`.
-- Confirm all 48 checkpoint shards are present and total 510,286,023,000 bytes.
-- Provide substantially more than the approximately 475 GiB stable process RSS;
-  the accepted host has 1 TiB RAM.
-- Ensure the service has `LimitMEMLOCK=infinity` and swap is unused.
-- Run `scripts/preflight.sh` before the foreground launcher or service.
-- Keep adequate DIMM and GPU airflow during the ten-minute pinned-bank load.
+- Confirm the FreeToken checkout exactly matches `freetoken.lock` and has no
+  local changes.
+- Confirm all 48 checkpoint shards are present and the indexed tensor size is
+  510,286,023,000 bytes.
+- Confirm the visible order is two qualified RTX 5090s, the 48 GiB RTX 4090, and
+  the auxiliary CMP 170HX.
+- Confirm no other process owns material VRAM on those devices.
+- Provide at least 600 GiB host RAM for the pinned banks and runtime overhead.
+- Apply `LimitMEMLOCK=infinity` and keep swap pressure at zero.
+- Re-run pairwise P2P integrity after a driver, kernel, BIOS, board, or slot change.
+- Keep adequate direct airflow over host memory and every accelerator.
 
-The launcher never evicts another model automatically. Stop the conflicting model,
-wait for its GPU memory and pinned pages to release, then start DeepSeek.
+Run:
+
+```bash
+DSV41_CONFIG=/etc/deepseek41-flash-freetoken.env scripts/preflight.sh
+```
 
 ## Acceptance gate
 
-1. `/health` and `/v1/models` respond and publish a 262,144-token context.
-2. A thinking-disabled deterministic sentinel returns exactly once.
-3. The historical 64-token greedy oracle remains byte-identical.
-4. A unique prompt longer than one 8,192-token scheduler chunk completes cleanly.
-5. Capacity changes pass unique 128K and 260K-near-limit prompts plus generation.
-6. `/v1/stats` returns to zero active requests and zero used KV after release.
-7. Only then accept throughput or latency measurements.
+1. `/health` and `/v1/models` respond and advertise 524,288 tokens.
+2. A deterministic thinking-disabled sentinel returns exactly once.
+3. The accepted short, arithmetic/code, and 8K retrieval hashes match.
+4. Native image OCR returns the expected fixture value.
+5. A prompt longer than one 8,192-token scheduler chunk completes cleanly.
+6. A capacity change passes a unique near-520K prompt plus generation.
+7. `/v1/stats` returns to zero active requests and zero used KV after release.
+8. Logs contain no OOM, NCCL, peer-access, CUDA, Xid, or backend-death error.
 
-Performance without these gates is diagnostic, not an accepted result.
+Performance without these gates is diagnostic rather than accepted.
 
-## Qualified runtime defaults
+## Qualified defaults
 
-- Batch/concurrency: one
-- Advertised context: 262,144 tokens
-- Full KV: 2,048 pages of 128 tokens
-- SWA/full-token ratio: 0.28125
+- Context: 524,288 tokens
+- Concurrency: one
+- Full KV: 4,096 pages of 128 tokens on rank 0 only
+- SWA/full ratio: 0.28125
 - Scheduler prefill chunk: 8,192 tokens
-- Expert caches: 512 slots on GPU0, 1,250 on GPU1
-- Expert and Engram source: pinned host RAM; zero steady disk reads
-- Attention: `dsv4_sparse`
-- CUDA graphs: enabled with batch-size ceiling one
-- Decode route preparation: fused
+- Exact EP route tile: 4,096 tokens
+- Expert caches: 256 / 1,472 / 2,350
+- Decode ownership: 112 / 136 / 136
+- Prefill ownership: 128 / 160 / 96
+- Engram ranks: 0 and 1
+- Native vision: auxiliary device owned by rank 0
+- P2P: enabled only after pairwise qualification; expected only on the RTX 5090 pair
+- CUDA graphs: batch-size ceiling one
 - Prompt cache: radix
-- Sampling: temperature 1.0, top-p 0.95 when a request omits them
-- Reasoning parser: `deepseekv32`; default numeric effort 25
-- Output cap: none at server level
-- MTP/DSpark and vision: off/not implemented in this profile
+- Sampling defaults: temperature 1.0 and top-p 0.95
+- Reasoning effort: numeric 25
+- DSpark/MTP: disabled
 
-Reasoning effort is a soft checkpoint input. It does not reserve or cap KV and it
-does not stop a response after a proportional number of tokens. Requests without an
-explicit output limit can consume all context remaining after the prompt.
+## Startup and shutdown
 
-## Startup and shutdown expectations
-
-A clean accepted start took about 10 minutes 2 seconds. Four serialized Engram
-source reads dominate roughly five minutes of that interval; each 47.2 GB shard
-took about 79 seconds. Stable RSS was approximately 475 GiB. Do not treat the unit
-as failed while weights are still progressing unless its logs show a real fault.
-
-Clean shutdown and kernel unpin took about 1 minute 40 seconds. Wait for the process
-to exit and pinned pages to fall before starting another large model. A five-minute
-systemd stop timeout is intentional.
+The qualified cold load is approximately ten minutes because hundreds of GiB of
+expert and Engram data are read, registered, and pinned. Weight progress in the
+journal is not a failure. The service template deliberately has an unlimited
+startup timeout and a five-minute stop timeout.
 
 Useful read-only checks:
 
@@ -65,45 +66,49 @@ Useful read-only checks:
 journalctl -u deepseek41-flash-freetoken.service -f
 nvidia-smi --query-gpu=index,name,memory.used,memory.total,utilization.gpu,temperature.gpu --format=csv
 free -h
-curl --fail http://172.17.0.1:8080/health
-curl --fail http://172.17.0.1:8080/v1/stats
+curl --fail http://127.0.0.1:8080/health
+curl --fail http://127.0.0.1:8080/v1/stats
 ```
+
+Wait for every worker to exit and pinned pages to release before starting another
+large model.
 
 ## Capacity guardrails
 
-The accepted near-limit run peaked at 32,146 MiB on GPU0 and left about
-461 MiB driver-visible there after allocator high-water reservations. Do not
-increase GPU0 cache slots, prefill chunk size, KV pages, graph batch size, or
-concurrency together. Change one variable, reload cleanly, and repeat both long
-capacity gates.
+The accepted 520K selective-P2P request peaked at 32,136 MiB on rank 0 and left
+approximately 35 MiB free at its tightest point. Do not simultaneously increase
+KV pages, the rank-0 cache, prefill chunk, route tile, graph batch size, or
+concurrency. Change one variable and repeat the exact, OCR, and capacity gates.
 
-GPU1 retained more margin because it does not own the dense backbone. Increasing
-its cache can only improve coverage for its own 192 experts; it cannot recover
-GPU0-owned cache rows.
+Extra memory on an expert worker cannot extend rank 0's KV without implementing a
+new attention/KV ownership protocol. This profile does not claim KV sharding.
 
 ## Failure triage
 
-- Startup OOM: verify the 512/1,250 cache geometry, 2,048 KV pages, graph batch one,
-  and that no stale process owns either GPU.
-- Long-prefill OOM: return to the accepted 8,192-token scheduler chunk and the
-  512-slot root cache, then rerun the 128K and 260K gates.
-- Slow first request: distinguish the ten-minute bank load and one-time kernel/JIT
-  work from warm request throughput.
-- Decode regression: check CUDA graph activation, expert-cache misses, PCIe traffic,
-  and whether a driver/topology change invalidated the graph/P2P qualification.
-- Host thrash or disk reads: confirm memlock is unlimited, RSS is resident, and swap
-  remains zero. This profile is not qualified with disk-offloaded Engram.
-- Repetition or changed greedy output: stop performance testing and run the exact
-  oracle; do not accept a faster topology before resolving correctness.
+- **Startup peer-access error:** disable P2P, verify visible-device order, and
+  rerun pairwise tests. Never force P2P on the RTX 4090 or vision edges.
+- **Long-prefill OOM:** restore the 256-slot authority cache, 8,192 scheduler
+  chunk, 4,096 route tile, and 256 MiB indexer cap.
+- **Slow prefill:** verify RTX 5090 P2P was actually selected and that no stale
+  process owns a peer context or VRAM.
+- **Image hang:** confirm only rank 0 sees the vision device and all text ranks
+  remain in the same ordered control-broadcast sequence.
+- **Idle distributed timeout:** verify the scheduler heartbeat path and process
+  versions match the pinned revision.
+- **Output drift:** stop performance testing and run the exact oracle before
+  changing caches, graphs, or transport.
 
 ## Rollback
 
-Stop the DeepSeek service and allow it to unpin fully. Start the preserved Qwen or
-other known-good unit only after the GPUs, port, and pinned-memory tier are free.
+Stop the service and wait for complete GPU and pinned-memory release. Set
+`DSV41_NCCL_P2P_DISABLE=1` for the matched transport control. For an optimization
+regression, disable one of the following while keeping the accepted geometry:
 
-For a decode-only regression, first set `DSV41_DECODE_REFILL_OVERLAP=0` to restore
-the serial authority path, or set `DSV41_FUSED_ROUTE_PREP=0` to restore composed
-route localization. For a graph-specific fault, set `DSV41_CUDA_GRAPH=0` and
-re-run the eager oracle. Keep the accepted KV and cache geometry unchanged while
-isolating the fault. Do not enable the experimental fused router or dense TP
-controls in this profile.
+```text
+DSV41_DECODE_REFILL_OVERLAP=0
+DSV41_FUSED_ROUTE_PREP=0
+DSV41_FUSED_DECODE_DISPATCH=0
+```
+
+Do not use DSpark/MTP as a rollback path; target-only decode is the qualified
+production behavior.

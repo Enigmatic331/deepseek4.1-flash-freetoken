@@ -1,135 +1,104 @@
 # DeepSeek V4.1 Flash on FreeToken
 
-Reproducible experimental profile for the official DeepSeek-V4.1-Flash
-checkpoint on two RTX 5090s. The dense text backbone stays whole on GPU0;
-the 384 routed experts are split 192/192 across both GPUs. The streamed expert
-banks and the 196B-parameter Engram memory tier remain pinned in host RAM.
+Reproducible deployment profile for the official DeepSeek-V4.1-Flash checkpoint
+on two RTX 5090s, one 48 GiB RTX 4090, and one CMP 170HX. The three text ranks
+use heterogeneous expert parallelism; the CMP runs only the native vision tower.
+The authoritative expert and Engram banks remain pinned in host RAM.
 
-This repository packages the deployment profile, operational checks, and accepted
-benchmark evidence. FreeToken's current V4.1 gate is text-only; vision and
-DSpark/MTP are outside this profile.
+The selected profile advertises 524,288 tokens, keeps the public prefill chunk at
+8,192 tokens, and uses direct P2P only between the two qualified RTX 5090s.
+Request concurrency remains one. DSpark/MTP is present in the pinned FreeToken
+revision as an experimental opt-in but is disabled by this profile.
 
 ## Pinned stack
 
 - Model: `deepseek-ai/DeepSeek-V4.1-Flash`
 - Model revision: `dba1be0a40aa45a94ad051997016db3960a90277`
-- FreeToken branch: <https://github.com/Enigmatic331/FreeToken/tree/dsv41-flash>
-- Public profile revision: `2f761ac918fd4cf776a87ad190ba3af290fd117c`
-- Exact live-tested runtime: [`dsv41-flash-256k-v1`](https://github.com/Enigmatic331/FreeToken/tree/dsv41-flash-256k-v1) (`2f761ac918fd4cf776a87ad190ba3af290fd117c`)
-- Development base: `qwen38-ep2` at `19634c8e13cfb17eb347ad2a710449922acb8600`
+- FreeToken branch: <https://github.com/Enigmatic331/FreeToken/tree/dsv41-phase-split-ep3>
+- Qualified FreeToken revision: `666248a0803da9217a3614e7eb78355fc6c7b60c`
+- Checkpoint: 48 shards, 510,286,023,000 indexed tensor bytes
 
-Exact pins are also recorded in [`freetoken.lock`](freetoken.lock).
+Exact pins are recorded in [`freetoken.lock`](freetoken.lock).
 
-## Accepted topology
+## Qualified placement
+
+| Role | Rank 0 / RTX 5090 | Rank 1 / RTX 5090 | Rank 2 / RTX 4090 |
+| --- | ---: | ---: | ---: |
+| Decode-owned experts | 112 | 136 | 136 |
+| Prefill-owned experts | 128 | 160 | 96 |
+| Stored expert range | `0:128` | `112:176` | `248:136` |
+| MoE cache slots | 256 | 1,472 | 2,350 |
+| Dense/attention/KV authority | yes | no | no |
+
+The two RTX 5090 ranks also own the row-sharded Engram tables. The CMP 170HX is
+visible only to rank 0 as the vision device; it is not part of the text
+communicator and holds no text worker.
+
+Material runtime geometry:
 
 ```text
-GPU0 RTX 5090: complete text backbone, shared experts, routed experts 0..191,
-               512 rank-local expert-cache slots, CUDA graph authority
-GPU1 RTX 5090: routed experts 192..383, 1,250 rank-local expert-cache slots
-CPU RAM:       pinned expert banks plus row-sharded Engram tables (~475 GiB RSS)
-Transport:     heterogeneous EP2; accepted service sets NCCL_P2P_DISABLE=1
-KV:            262,144-token DSV4.1 paged pool, 2,048 full pages, 0.28125 SWA ratio
-Prefill:       8,192-token scheduler chunks, D2D reuse for resident expert rows
-Decode:        graph-safe authority refill/shared overlap and fused EP route prep
-Sampling:      temperature 1.0, top-p 0.95; explicit request values win
-Reasoning:     effort 25 by default; soft prompt control, not a token cap
+Context:             524,288 tokens
+Full KV pages:       4,096 x 128 tokens, authority only
+Scheduler prefill:   8,192 tokens
+Internal EP tile:    4,096 tokens
+Indexer-logit cap:   256 MiB
+Text transport:      RTX 5090 pair P2P; RTX 4090 edges shared memory
+Concurrency:         one request
+Vision:              native checkpoint tower on the CMP 170HX
+MTP:                 disabled
 ```
-
-Engram and expert misses are materialized on the GPUs; this profile does not run
-any model layer as CPU decode. Host RAM is a pinned weight tier, not a CPU compute
-tier. See [`docs/architecture.md`](docs/architecture.md) for the placement and
-correctness constraints.
 
 ## Accepted performance
 
-The final 256K/cache-512 profile passed the historical exact-output oracle,
-unique 128K prompt, and 260K-near-limit capacity gate while retaining the
-previously qualified sampling defaults.
+All figures are batch-one measurements on the qualified host, not portable
+promises.
 
-| Case | Prompt | Prefill tok/s | Decode tok/s | TTFT |
-| --- | ---: | ---: | ---: | ---: |
-| Exact short oracle | 64 | 11.06 | 12.86 | 5.786 s |
-| Unique long prompt | 128,000 | 1,350.01 | 14.21 | 94.814 s |
-| Near-limit capacity | 260,000 | 1,309.53 | 12.96 | 198.545 s |
-| Post-long decode mean (3) | 64 | 12.72 | 15.14 | 5.033 s |
-
-The 260K run generated 31 additional tokens and peaked at 32,146 MiB on GPU0
-and 29,118 MiB on GPU1. Driver-visible GPU0 margin was about 461 MiB at the
-allocator high-water mark. The 256K profile's post-long short decode mean is
-about 9% below the prior 64K profile because expert-cache capacity was deliberately
-traded for a four-times-larger KV pool.
-
-These numbers are batch-one observations from one host, not portable promises.
-Correctness gates precede all performance acceptance. Raw accepted rows are in
-[`results/accepted.csv`](results/accepted.csv).
-
-The refill-overlap optimization uses the same 127-token outputs as its control and
-improved decode by 1.36%; every matched output hash was byte-identical.
-The change does not alter prefill, KV capacity, cache sizes, or expert ownership.
-Fusing EP localization and cache-safe inactive-id preparation then improved its
-fresh matched control from 16.48 to 16.65 tok/s (+1.04%), again with byte-identical
-outputs. Those are 64K optimization controls; the accepted 256K capacity profile
-retains both code paths but has smaller expert caches.
-
-## Experimental phase-split EP3
-
-An experimental three-GPU branch keeps prefill and Engram on two RTX 5090 ranks
-while an RTX 4080 SUPER joins only as a decode-time expert worker. It uses
-overlapping host expert ranges so ownership can change from 192/192/0 during
-prefill to 160/160/64 during decode without rereading weights.
-
-- FreeToken branch: <https://github.com/Enigmatic331/FreeToken/tree/dsv41-phase-split-ep3>
-- Qualified revision: `36728d0adfca02affe19ad7e13ed888b2923473a`
-
-| Case | Accepted EP2 | Engram2/full-prefill EP3 | Phase-split EP3 |
+| Gate | P2P disabled | Selective 5090 P2P | Change |
 | --- | ---: | ---: | ---: |
-| Exact oracle | accepted | accepted | accepted |
-| 128K prefill | 1,350.01 tok/s | 677.83 tok/s | 1,247.72 tok/s |
-| 260K prefill | 1,309.53 tok/s | 659.94 tok/s | 1,188.78 tok/s |
-| Short decode | 15.14 tok/s | 17.12 tok/s | 17.07 tok/s |
+| 8,192-token prefill, five-run mean | 1,302.915 tok/s | 1,460.940 tok/s | +12.13% |
+| 512-prompt/127-completion decode, five-run mean | 19.155 tok/s | 19.522 tok/s | +1.92% |
+| 520,000-token capacity prefill | 1,090.648 tok/s | 1,207.958 tok/s | +10.75% |
 
-The split recovers most of the two-5090 prefill rate while retaining the
-auxiliary card's roughly 12.7% decode gain over EP2. Its cost is approximately
-70 GiB of additional host RSS for duplicated expert storage. This remains an
-experimental control and does not change the accepted deployment or lock file.
-Raw summary rows are in [`results/phase-split-ep3.csv`](results/phase-split-ep3.csv).
+The 520K selective-P2P request generated 31 additional tokens at 17.472 tok/s.
+Peak observed allocations were 32,136 MiB, 30,021 MiB, and 45,146 MiB across
+the three text GPUs. The authority briefly reached approximately 35 MiB free,
+so this is a validated ceiling rather than spare capacity.
 
-## Cold load and memory
-
-- Checkpoint payload: 510,286,023,000 bytes across 48 safetensor shards.
-- Ready time after a clean start: about 10 minutes 2 seconds.
-- Each 47.2 GB rank-local Engram shard loaded in about 79 seconds at 640–641 MB/s.
-- Stable process RSS: roughly 475 GiB; swap remained unused.
-- Clean shutdown and unpin: roughly 1 minute 40 seconds.
-- The service requires `LimitMEMLOCK=infinity`; this is why the systemd template
-  carries an explicit limit.
+The exact short/code/retrieval oracle, native image OCR, a 520K capacity request,
+clean cold start, and frontend completion path all passed. See
+[`docs/qualification-512k.md`](docs/qualification-512k.md) and
+[`results/production-512k.csv`](results/production-512k.csv).
 
 ## Deploy
 
-1. Clone the pinned FreeToken fork and check out the revision in `freetoken.lock`.
-2. Build/install FreeToken using its upstream instructions in the same environment.
-3. Download all 48 official checkpoint shards and tokenizer/config files locally.
-4. Copy `.env.example` to a host-only `.env` and edit paths and GPU identifiers.
-5. Run `scripts/preflight.sh`, then `scripts/run.sh` for a foreground qualification.
-6. Run `scripts/smoke-test.sh` before serving requests.
-7. If desired, install the reviewed system service template only after replacing
-   every `/home/USER` and `User=USER` placeholder.
+1. Clone the pinned FreeToken fork and check out the revision in
+   [`freetoken.lock`](freetoken.lock).
+2. Install FreeToken using its upstream instructions in a dedicated environment.
+3. Download all 48 official checkpoint shards and tokenizer/config files.
+4. Copy [`.env.example`](.env.example) to a host-only file, restrict its
+   permissions, and replace the placeholder paths and device selection.
+5. Run [`scripts/preflight.sh`](scripts/preflight.sh).
+6. Run [`scripts/run.sh`](scripts/run.sh) in the foreground for qualification.
+7. Run [`scripts/smoke-test.sh`](scripts/smoke-test.sh), the deterministic oracle,
+   a real image OCR gate, and an appropriate long-context gate.
+8. Install the reviewed systemd template only after adapting its generic service
+   user and paths.
 
-The launcher binds to `172.17.0.1:8080` by default so a Dockerized frontend can
-reach it without exposing the API to the LAN. Review the host firewall. The
-launcher does not stop an existing Qwen or other GPU service for you.
+The example binds to loopback. Choose a deliberately firewalled internal address
+only when a separate frontend must connect from another network namespace.
 
 ## Safety notes
 
-- Keep concurrency at one for this qualified geometry.
-- Do not raise the 8,192-token prefill chunk or the 512-slot GPU0 expert cache
-  without repeating the 128K and 260K capacity gates.
-- Requalify position-bucketed graphs after driver, CUDA, allocator, BIOS, slot,
-  topology, or kernel changes.
-- Reasoning effort 25 is not a reasoning-token limit. With no request output cap,
-  generation continues until EOS or the remaining context boundary.
-- `NCCL_P2P_DISABLE=1` is part of this accepted service. Direct-P2P TP experiments
-  are documented as controls, not promoted to the production profile.
+- Keep concurrency at one for this geometry.
+- Do not raise the 8,192-token scheduler chunk, 4,096-token route tile, authority
+  cache, or KV pages without repeating the 520K capacity gate.
+- Do not assume P2P from model names. Verify pairwise access, payload integrity,
+  and bandwidth after any driver, kernel, BIOS, motherboard, or slot change.
+- Only the RTX 5090 pair is expected to use P2P. The RTX 4090 and vision device
+  must retain a non-P2P path.
+- Keep `LimitMEMLOCK=infinity`; pinned host banks are part of the runtime design.
+- Do not enable DSpark/MTP or request concurrency as part of this production
+  profile. Each requires a separate correctness and throughput qualification.
 
-See [`docs/operations.md`](docs/operations.md) for startup, monitoring, rollback,
-and capacity checks.
+See [`docs/architecture.md`](docs/architecture.md) for placement constraints and
+[`docs/operations.md`](docs/operations.md) for startup, monitoring, and rollback.

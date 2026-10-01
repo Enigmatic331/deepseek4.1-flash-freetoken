@@ -1,16 +1,17 @@
 [Unit]
-Description=DeepSeek V4.1 Flash official checkpoint on FreeToken EP2
+Description=DeepSeek V4.1 Flash 512K EP3 on FreeToken with native vision
 Wants=network-online.target
 After=network-online.target
-Conflicts=llama-qwen.service
+StartLimitIntervalSec=30min
+StartLimitBurst=3
 
 [Service]
 Type=exec
-User=USER
-Group=USER
-WorkingDirectory=/home/USER/models/deepseek4.1-flash-freetoken
-Environment=DSV41_CONFIG=/home/USER/.config/deepseek41-flash-freetoken.env
-ExecStart=/home/USER/models/deepseek4.1-flash-freetoken/scripts/run.sh
+User=deepseek
+Group=deepseek
+WorkingDirectory=/opt/deepseek41-flash-freetoken
+Environment=DSV41_CONFIG=/etc/deepseek41-flash-freetoken.env
+ExecStart=/opt/deepseek41-flash-freetoken/scripts/run.sh
 Restart=on-failure
 RestartSec=30
 TimeoutStartSec=infinity
