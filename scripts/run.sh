@@ -79,9 +79,9 @@ exec "$FREETOKEN_PYTHON" -m freetoken.cli serve \
   --rank-local-cuda-visibility \
   --rank-local-cuda-peer-visibility \
   --dsv41-backbone-rank 0 \
-  --dsv41-expert-shards "${DSV41_DECODE_EXPERT_SHARDS:-112,136,136}" \
+  --dsv41-expert-shards "${DSV41_DECODE_EXPERT_SHARDS:-80,152,152}" \
   --dsv41-prefill-expert-shards "${DSV41_PREFILL_EXPERT_SHARDS:-128,160,96}" \
-  --dsv41-expert-storage-ranges "${DSV41_EXPERT_STORAGE_RANGES:-0:128,112:176,248:136}" \
+  --dsv41-expert-storage-ranges "${DSV41_EXPERT_STORAGE_RANGES:-0:128,80:208,232:152}" \
   --dsv41-engram-ranks "${DSV41_ENGRAM_RANKS:-0,1}" \
   --vision-device "${DSV41_VISION_DEVICE:-3}" \
   --max-running-requests 1 \

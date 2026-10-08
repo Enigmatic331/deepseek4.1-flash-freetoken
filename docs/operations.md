@@ -42,8 +42,9 @@ Performance without these gates is diagnostic rather than accepted.
 - Scheduler prefill chunk: 8,192 tokens
 - Exact EP route tile: 4,096 tokens
 - Expert caches: 256 / 1,472 / 2,350
-- Decode ownership: 112 / 136 / 136
+- Decode ownership: 80 / 152 / 152
 - Prefill ownership: 128 / 160 / 96
+- Stored expert intervals: 0:128 / 80:208 / 232:152
 - Engram ranks: 0 and 1
 - Native vision: auxiliary device owned by rank 0
 - P2P: enabled only after pairwise qualification; expected only on the RTX 5090 pair

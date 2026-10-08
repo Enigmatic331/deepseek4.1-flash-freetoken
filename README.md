@@ -24,9 +24,9 @@ Exact pins are recorded in [`freetoken.lock`](freetoken.lock).
 
 | Role | Rank 0 / RTX 5090 | Rank 1 / RTX 5090 | Rank 2 / RTX 4090 |
 | --- | ---: | ---: | ---: |
-| Decode-owned experts | 112 | 136 | 136 |
+| Decode-owned experts | 80 | 152 | 152 |
 | Prefill-owned experts | 128 | 160 | 96 |
-| Stored expert range | `0:128` | `112:176` | `248:136` |
+| Stored expert range | `0:128` | `80:208` | `232:152` |
 | MoE cache slots | 256 | 1,472 | 2,350 |
 | Dense/attention/KV authority | yes | no | no |
 
@@ -64,9 +64,16 @@ Peak observed allocations were 32,136 MiB, 30,021 MiB, and 45,146 MiB across
 the three text GPUs. The authority briefly reached approximately 35 MiB free,
 so this is a validated ceiling rather than spare capacity.
 
+After the P2P qualification, decode ownership was rebalanced away from the
+cache-constrained authority. A fresh five-run matched A/B improved short decode
+from 19.051 to 20.829 tok/s (+9.33%). The same placement retained 1,456.583
+tok/s mean 8K prefill (-0.30%) and completed the 520K gate at 1,202.979 tok/s
+(-0.41%).
+
 The exact short/code/retrieval oracle, native image OCR, a 520K capacity request,
 clean cold start, and frontend completion path all passed. See
 [`docs/qualification-512k.md`](docs/qualification-512k.md) and
+[`docs/qualification-decode-ownership.md`](docs/qualification-decode-ownership.md), plus
 [`results/production-512k.csv`](results/production-512k.csv).
 
 ## Deploy
