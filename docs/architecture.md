@@ -2,48 +2,53 @@
 
 ## Execution design
 
-FreeToken starts three text processes. Rank 0 owns the complete TP1 backbone,
-dense layers, sparse attention, KV, shared experts, logits, sampling, and native
-vision integration. Ranks 1 and 2 are expert workers. Engram remains row-sharded
-over the two RTX 5090 ranks; the RTX 4090 does not participate in Engram.
+FreeToken starts four text processes. Rank 0 owns the complete TP1 backbone,
+dense layers, sparse attention, physical KV, shared experts, logits, and sampling.
+Ranks 1–3 are expert workers. Rank 3 also runs native vision. Engram remains
+row-sharded over the two RTX 5090 ranks.
 
-The workload has distinct prefill and decode ownership:
+The workload uses distinct prefill and decode ownership:
 
-| Rank | Device class | Prefill experts | Decode experts | Stored interval |
-| ---: | --- | ---: | ---: | --- |
-| 0 | RTX 5090 | 128 | 112 | `[0,128)` |
-| 1 | RTX 5090 | 160 | 136 | `[112,288)` |
-| 2 | RTX 4090 48 GiB | 96 | 136 | `[248,384)` |
+| Rank | Device class | Prefill experts | Decode experts | Stored interval | Cache slots |
+| ---: | --- | ---: | ---: | --- | ---: |
+| 0 | RTX 5090 authority | 112 | 32 | `[0,112)` | 240 |
+| 1 | RTX 5090 worker | 128 | 144 | `[32,240)` | 1,536 |
+| 2 | modified RTX 4090 48 GiB | 112 | 144 | `[144,352)` | 2,350 |
+| 3 | modified RTX 4080 SUPER 32 GiB | 32 | 64 | `[288,384)` | 1,408 |
 
 Overlapping storage lets ownership change at the phase boundary without rereading
-the full bank. Multi-peer packed transport returns only each worker's routed
-outputs. Host RAM is a pinned weight tier; it is not CPU expert execution.
+the complete expert bank. Grouped packed transport returns only routed outputs.
+Host RAM is both the pinned authoritative weight tier and the source for bounded
+CPU assistance: two disjoint 24-thread pools serve ranks 1 and 2, with one GPU
+fetch plus at most one CPU-computed miss per layer under the accepted policy.
 
-## KV and the 512K boundary
+## KV and the 786K boundary
 
-Only rank 0 owns physical attention KV. Ranks 1 and 2 retain metadata-only pools.
-The 4,096 full pages at 128 tokens/page provide a 524,288-token slab; the
-authority KV payload is approximately 7.22 GiB. This placement avoids duplicating
-the attention state on expert-only ranks.
+Only rank 0 owns physical attention KV. Expert-only ranks retain metadata-only
+pools. The 6,144 full pages at 128 tokens/page provide the 786,432-token ceiling.
+The SWA ratio of 0.1875 retains 1,152 physical SWA pages. KV remains BF16; no KV
+quantization was introduced to reach this ceiling.
 
-The decisive capacity failures were transient workspace failures, not late KV
-growth. Three changes made the 512K profile viable:
+The 786K qualification compared the geometry against 524K using exact short and
+complex multi-hop/retrieval fixtures, cancellation, C2 isolation, cached follow-up,
+and concurrent 400K/496K workloads. Minimum observed authority free memory fell
+from 2,694.62 MiB at 524K to 1,576.62 MiB at 786K. A 1M geometry was functional
+but did not preserve the accepted production margin.
 
-- indexer masking no longer creates a 512 MiB temporary;
-- hidden-cache normalization avoids a 640 MiB `square()` temporary;
-- each 8,192-token scheduler chunk is routed as two exact 4,096-token EP tiles,
-  reducing the largest route tensor from 480 MiB to 240 MiB.
+Workspace control still depends on:
 
-The rank-0 cache is 256 slots, the safe floor retaining two complete 128-expert
-prefill buffers. Raising it removes capacity margin; lowering it gives up the
-copy/compute overlap that protects prefill.
+- a 256 MiB indexer-logit ceiling;
+- compact prefill candidates and sparse consumer logits;
+- 8,192-token scheduler chunks split into exact 4,096-token route tiles;
+- native BF16 head storage with FP32 logits;
+- worker Engram scratch reuse and phase-aware cache priority.
 
 ## Native multimodal placement
 
 The checkpoint's image processor and vision tower are native FreeToken paths.
-Only rank 0 can see the auxiliary vision GPU. Image patches execute there and the
-final visual embeddings return to rank 0. Raw pixels are not fanned out to expert
-workers, and the vision GPU is not a text communicator member.
+Rank 3 runs vision on the same 4080 SUPER that owns its text-expert share. Final
+visual embeddings return to rank 0. Raw pixels are not fanned out to the other
+expert workers.
 
 Network image fetching rejects credentials, non-HTTP(S) schemes, non-public
 addresses, and unsafe redirects. Production frontends may instead send bounded
@@ -51,40 +56,57 @@ base64 image parts directly.
 
 ## Selective P2P
 
-Pure one-GPU-per-rank visibility hid enough physical topology that NCCL could not
-choose transport safely per pair. Enabling P2P in that layout caused an unsupported
-peer-access attempt on heterogeneous edges.
+Rank-local visibility keeps each assigned device first while exposing qualified
+text peers so NCCL can select transport per edge. On the accepted topology:
 
-The accepted opt-in layout keeps each assigned text device first as local
-`cuda:0`, then exposes the other text devices as topology peers. NCCL selected:
+- the RTX 5090 pair uses direct P2P;
+- every RTX 4090/4080 edge uses the non-P2P shared-memory path.
 
-- `P2P/CUMEM` for RTX 5090 to RTX 5090 traffic;
-- `SHM/direct/direct` for every RTX 4090 edge.
+This is hardware- and software-stack-specific. A new host must pass pairwise
+byte-integrity and bandwidth tests before enabling the profile.
 
-The vision GPU remains owner-only. Peer visibility does not place another rank's
-model on that GPU; it supplies topology information and creates small peer
-contexts. On the qualified host the authority's critical free-memory difference
-versus P2P-off was approximately 30 MiB.
+## C2 scheduling
 
-This behavior is hardware- and software-stack-specific. A new host must pass
-pairwise byte-integrity and bandwidth tests before enabling the profile.
+The scheduler admits at most two requests. Stateful V4.1 compression/Engram and
+KV state remain isolated per request. One resident decode step may run between
+ordinary 8K prefill chunks; the first and final chunks, paired head/tail forward,
+dependency-cone boundaries, and numerical kernels remain unchanged. This reduces
+long stalls but does not make two streams independently achieve the single-stream
+peak.
+
+## Promoted execution features
+
+The final branch includes the accumulated exact-output work through 2026-10-16:
+
+- decode-refill overlap, fused route preparation, and fused decode dispatch;
+- tuned native FP8 decode kernels without changing checkpoint quantization;
+- single-miss background admission, empty-cache guard, fused CPU preparation,
+  paired CPU DS-FP4 tiles, and bounded warm wait;
+- compact/sparse prefill logits, inactive-rank skipping, grouped/async packed
+  transport, tail pairing, and the long-prompt dependency cone;
+- C2 bounded prefill interleave;
+- authority-side M=1/M=2 fusion;
+- token-boundary metadata overlap;
+- MoE hot-path statistics collection disabled; cache reporting retained.
 
 ## Correctness boundary
 
 - Dense/attention/KV and sampling authority remain on rank 0.
 - Expert ownership totals exactly 384 in both phases.
 - Engram remains on the two homogeneous RTX 5090 ranks.
-- The scheduler chunk remains 8,192 and the internal exact route tile 4,096.
-- CUDA graphs remain batch-one and position-aware.
-- Native vision is isolated from text collectives.
-- DSpark/MTP and multi-request concurrency remain disabled.
-- Capacity, cache, route, graph, topology, or driver changes require the exact
-  oracle, image OCR, and long-context gates before performance acceptance.
+- Scheduler chunk and internal route tile remain 8,192/4,096 tokens.
+- CUDA graphs are qualified through batch size two only.
+- Native vision remains on rank 3 and follows the same ordered control protocol.
+- MTP remains disabled.
+- Capacity, cache, route, graph, topology, quant, or concurrency changes require
+  exact text/code/retrieval, native-image, cancellation, cache-integrity, and
+  long-context gates before performance acceptance.
 
-## Current bottlenecks
+## Current bottleneck
 
-The 12.13% matched prefill gain from RTX 5090 P2P shows that inter-rank transport
-was material. Decode improved only 1.92%, so its next targets are expert fetch and
-overlap behavior followed by the FP4 decode kernel. KV sharding is not part of the
-current plan because the MLA authority state is already compact relative to the
-expert and workspace costs.
+The final single-stream median is 35.875 tok/s, or about 27.87 ms/token. Remaining
+time is spread across backbone/attention/router work, routed experts and host
+refill, collectives/authority work, and token-boundary orchestration. The profile
+is no longer explained by one unambiguously dominant copy alone. Additional VRAM
+or another GPU helps only if it changes ownership/cache locality or removes a
+critical communication edge; capacity by itself is not a throughput guarantee.

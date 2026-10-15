@@ -1,6 +1,9 @@
-# 512K heterogeneous production qualification
+# Historical: 512K heterogeneous EP3 qualification
 
 Date: 2026-10-01
+
+This report preserves the former three-text-rank control. It is not the current
+launcher geometry; see `qualification-20261016-final.md` for EP4/C2 production.
 
 ## Accepted outcome
 

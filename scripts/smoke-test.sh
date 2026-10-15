@@ -3,7 +3,7 @@ set -euo pipefail
 
 base_url="${DSV41_BASE_URL:-http://127.0.0.1:8080}"
 model="${DSV41_MODEL:-DeepSeek (Experimental)}"
-context="${DSV41_CONTEXT:-524288}"
+context="${DSV41_CONTEXT:-786432}"
 
 curl --fail --silent --show-error "$base_url/health"
 echo
@@ -26,4 +26,4 @@ choice = json.load(sys.stdin)["choices"][0]
 assert choice["finish_reason"] == "stop"
 assert choice["message"]["content"].strip() == "FREETOKEN_OK"
 '
-echo "Text smoke test passed. Run the documented image OCR gate before promotion."
+echo "Text smoke test passed. Run the documented image, C2, cancellation, and capacity gates before promotion."

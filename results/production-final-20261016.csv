@@ -1,0 +1,9 @@
+gate,control,candidate,change,correctness
+token_boundary_sustained_decode_median_tok_s,35.3493509101,35.8751350268,+1.487%,exact_hashes_and_repeat_identity
+token_boundary_sustained_ms_per_token,28.2890625783,27.8744595457,-1.466%,exact_hashes_and_repeat_identity
+token_boundary_sustained_ttft_s,1.285406047,1.285509038,+0.008%,passed
+cold_prefill_17490_ttft_s,9.7489318301,9.6904862350,-0.600%,exact_uncached_no_material_regression
+production_exact_smoke_decode_tok_s,,35.7310235731,,exact_hash
+c2_resident_pause_17490_s,9.807,5.317,-45.8%,exact_interleaved_tokens
+c2_resident_pause_40000_s,13.285,4.200,-68.4%,exact_interleaved_tokens
+c2_resident_pause_520000_s,approximately_full_prefill,4.016,,exact_orbit_and_clean_release

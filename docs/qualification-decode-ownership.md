@@ -1,6 +1,9 @@
-# Decode ownership rebalance qualification
+# Historical: EP3 decode ownership rebalance qualification
 
 Date: 2026-10-01
+
+This report preserves an earlier three-text-rank optimization. It is not the
+current launcher geometry; see `qualification-20261016-final.md` for EP4/C2.
 
 ## Accepted change
 

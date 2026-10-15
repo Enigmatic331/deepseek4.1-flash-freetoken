@@ -1,5 +1,5 @@
 [Unit]
-Description=DeepSeek V4.1 Flash 512K EP3 on FreeToken with native vision
+Description=DeepSeek V4.1 Flash 786K EP4/C2 on FreeToken with native vision
 Wants=network-online.target
 After=network-online.target
 StartLimitIntervalSec=30min

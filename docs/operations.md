@@ -2,16 +2,17 @@
 
 ## Before starting
 
-- Confirm the FreeToken checkout exactly matches `freetoken.lock` and has no
-  local changes.
+- Confirm the FreeToken checkout exactly matches `freetoken.lock` and is clean.
 - Confirm all 48 checkpoint shards are present and the indexed tensor size is
   510,286,023,000 bytes.
-- Confirm the visible order is two qualified RTX 5090s, the 48 GiB RTX 4090, and
-  the auxiliary CMP 170HX.
-- Confirm no other process owns material VRAM on those devices.
-- Provide at least 600 GiB host RAM for the pinned banks and runtime overhead.
+- Confirm logical order: authority RTX 5090, worker RTX 5090, modified 48 GiB RTX
+  4090, modified 32 GiB RTX 4080 SUPER.
+- Confirm all four are text ranks and logical device 3 is also the vision device.
+- Confirm no unrelated process owns material VRAM.
+- Provide at least 900 GiB OS-visible host RAM for pinned banks and overhead.
 - Apply `LimitMEMLOCK=infinity` and keep swap pressure at zero.
-- Re-run pairwise P2P integrity after a driver, kernel, BIOS, board, or slot change.
+- Re-run pairwise P2P integrity after a driver, kernel, BIOS, board, riser, or
+  slot change.
 - Keep adequate direct airflow over host memory and every accelerator.
 
 Run:
@@ -22,44 +23,48 @@ DSV41_CONFIG=/etc/deepseek41-flash-freetoken.env scripts/preflight.sh
 
 ## Acceptance gate
 
-1. `/health` and `/v1/models` respond and advertise 524,288 tokens.
+1. `/health` and `/v1/models` respond and advertise 786,432 tokens.
 2. A deterministic thinking-disabled sentinel returns exactly once.
-3. The accepted short, arithmetic/code, and 8K retrieval hashes match.
+3. Accepted short, arithmetic/code, and retrieval outputs match exactly.
 4. Native image OCR returns the expected fixture value.
-5. A prompt longer than one 8,192-token scheduler chunk completes cleanly.
-6. A capacity change passes a unique near-520K prompt plus generation.
-7. `/v1/stats` returns to zero active requests and zero used KV after release.
-8. Logs contain no OOM, NCCL, peer-access, CUDA, Xid, or backend-death error.
+5. Prompts spanning multiple 8,192-token chunks complete cleanly.
+6. A near-ceiling unique prompt plus generation passes without OOM.
+7. Two-request text, text+vision, cancellation, and long-prefill/resident-decode
+   gates preserve isolation and bounded progress.
+8. `/v1/stats` returns to zero active requests and zero used KV/SWA pages.
+9. Logs contain no OOM, NCCL, peer-access, CUDA, Xid, AER/BadTLP, MCE/EDAC UE,
+   or backend-death error.
 
 Performance without these gates is diagnostic rather than accepted.
 
 ## Qualified defaults
 
-- Context: 524,288 tokens
-- Concurrency: one
-- Full KV: 4,096 pages of 128 tokens on rank 0 only
-- SWA/full ratio: 0.28125
+- Context: 786,432 tokens
+- Concurrency: at most two requests
+- Full KV: 6,144 pages of 128 tokens on rank 0 only
+- SWA: 1,152 physical pages (`swa_full_tokens_ratio=0.1875`)
+- KV dtype: BF16
 - Scheduler prefill chunk: 8,192 tokens
 - Exact EP route tile: 4,096 tokens
-- Expert caches: 256 / 1,472 / 2,350
-- Decode ownership: 80 / 152 / 152
-- Prefill ownership: 128 / 160 / 96
-- Stored expert intervals: 0:128 / 80:208 / 232:152
+- Expert caches: 240 / 1,536 / 2,350 / 1,408
+- Decode ownership: 32 / 144 / 144 / 64
+- Prefill ownership: 112 / 128 / 112 / 32
+- Stored intervals: 0:112 / 32:208 / 144:208 / 288:96
 - Engram ranks: 0 and 1
-- Native vision: auxiliary device owned by rank 0
-- P2P: enabled only after pairwise qualification; expected only on the RTX 5090 pair
-- CUDA graphs: batch-size ceiling one
+- CPU assistance: ranks 1/2, 24 threads each, one-fetch/one-miss ceiling
+- Native vision: logical device 3, also text rank 3
+- P2P: expected only on the RTX 5090 pair after pairwise qualification
 - Prompt cache: radix
-- Sampling defaults: temperature 1.0 and top-p 0.95
-- Reasoning effort: numeric 25
+- Sampling defaults: temperature 1.0, top-p 0.95, numeric reasoning effort 25
 - DSpark/MTP: disabled
+- MoE statistics: disabled in the hot path; cache reporting enabled
 
 ## Startup and shutdown
 
-The qualified cold load is approximately ten minutes because hundreds of GiB of
-expert and Engram data are read, registered, and pinned. Weight progress in the
-journal is not a failure. The service template deliberately has an unlimited
-startup timeout and a five-minute stop timeout.
+Cold loading maps, registers, and pins hundreds of GiB of weights, then performs
+kernel warmup. On the qualified host this can take roughly 15–20 minutes. Weight
+progress in the journal is not by itself a failure. The service template uses an
+unlimited startup timeout and a five-minute stop timeout.
 
 Useful read-only checks:
 
@@ -76,40 +81,37 @@ large model.
 
 ## Capacity guardrails
 
-The accepted 520K selective-P2P request peaked at 32,136 MiB on rank 0 and left
-approximately 35 MiB free at its tightest point. Do not simultaneously increase
-KV pages, the rank-0 cache, prefill chunk, route tile, graph batch size, or
-concurrency. Change one variable and repeat the exact, OCR, and capacity gates.
+The qualified 786K complex run reached 1,576.62 MiB minimum authority free memory.
+Do not simultaneously increase KV pages, authority cache, prefill chunk, route
+tile, graph batch size, or concurrency. Change one variable and repeat exact,
+image, cancellation, C2-isolation, and capacity gates.
 
-Extra memory on an expert worker cannot extend rank 0's KV without implementing a
-new attention/KV ownership protocol. This profile does not claim KV sharding.
+Extra memory on an expert worker cannot extend rank 0's KV without a new
+attention/KV ownership protocol. This profile does not claim KV sharding.
 
 ## Failure triage
 
 - **Startup peer-access error:** disable P2P, verify visible-device order, and
-  rerun pairwise tests. Never force P2P on the RTX 4090 or vision edges.
-- **Long-prefill OOM:** restore the 256-slot authority cache, 8,192 scheduler
-  chunk, 4,096 route tile, and 256 MiB indexer cap.
-- **Slow prefill:** verify RTX 5090 P2P was actually selected and that no stale
-  process owns a peer context or VRAM.
-- **Image hang:** confirm only rank 0 sees the vision device and all text ranks
-  remain in the same ordered control-broadcast sequence.
-- **Idle distributed timeout:** verify the scheduler heartbeat path and process
-  versions match the pinned revision.
+  rerun pairwise tests. Never force P2P on RTX 4090/4080 edges.
+- **Long-prefill OOM:** restore the documented caches, 8,192 scheduler chunk,
+  4,096 route tile, 256 MiB indexer cap, and 6,144 pages.
+- **Slow prefill:** verify RTX 5090 P2P was selected, grouped packed transport is
+  enabled, and no stale process owns a peer context or VRAM.
+- **C2 stall:** check the interleave/tail/cone startup fingerprints and ordered
+  rank-control messages; do not increase admission while diagnosing.
+- **Image hang:** confirm rank 3 owns vision and all ranks remain in the same
+  ordered control-broadcast sequence.
 - **Output drift:** stop performance testing and run the exact oracle before
-  changing caches, graphs, or transport.
+  changing caches, graphs, quantization, or transport.
 
 ## Rollback
 
-Stop the service and wait for complete GPU and pinned-memory release. Set
-`DSV41_NCCL_P2P_DISABLE=1` for the matched transport control. For an optimization
-regression, disable one of the following while keeping the accepted geometry:
-
-```text
-DSV41_DECODE_REFILL_OVERLAP=0
-DSV41_FUSED_ROUTE_PREP=0
-DSV41_FUSED_DECODE_DISPATCH=0
-```
+The immediately preceding production revision is pinned in `freetoken.lock` as
+`FREETOKEN_PREVIOUS_PRODUCTION_REVISION`. For a feature-specific A/B, override
+one switch at a time in the host-only environment and retain the same geometry.
+For a full rollback, stop the service, wait for GPU and pinned-memory release,
+check out the previous revision in a clean FreeToken tree, then restart and run
+the exact smoke/capacity gates.
 
 Do not use DSpark/MTP as a rollback path; target-only decode is the qualified
-production behavior.
+production behavior. Do not add `--moe-collect-stats` to normal production.
