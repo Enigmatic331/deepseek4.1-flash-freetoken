@@ -116,8 +116,11 @@ The immediately preceding production revision is pinned in `freetoken.lock` as
 `FREETOKEN_PREVIOUS_PRODUCTION_REVISION`. For a feature-specific A/B, override
 one switch at a time in the host-only environment and retain the same geometry.
 For a full rollback, stop the service, wait for GPU and pinned-memory release,
-check out the previous revision in a clean FreeToken tree, then restart and run
-the exact smoke/capacity gates.
+check out the previous revision in a clean FreeToken tree, disable the three
+packed-KV switches, and restore its pinned 786,432-token geometry (6,144 main
+pages and SWA ratio 0.1875) before restarting. Then run the exact smoke/capacity
+gates. Do not attempt to run the previous BF16-pool revision with the 1M page
+geometry.
 
 Do not use DSpark/MTP as a rollback path; target-only decode is the qualified
 production behavior. Do not add `--moe-collect-stats` to normal production.
