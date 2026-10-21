@@ -42,10 +42,10 @@ if (( ${#model_shards[@]} != MODEL_SHARDS )); then
   exit 1
 fi
 
-decode_shards="${DSV41_DECODE_EXPERT_SHARDS:-32,144,144,64}"
+decode_shards="${DSV41_DECODE_EXPERT_SHARDS:-16,136,160,72}"
 prefill_shards="${DSV41_PREFILL_EXPERT_SHARDS:-112,128,112,32}"
-storage_ranges="${DSV41_EXPERT_STORAGE_RANGES:-0:112,32:208,144:208,288:96}"
-cache_sizes="${DSV41_MOE_CACHE_SIZES:-240,1536,2350,1408}"
+storage_ranges="${DSV41_EXPERT_STORAGE_RANGES:-0:112,16:224,144:208,288:96}"
+cache_sizes="${DSV41_MOE_CACHE_SIZES:-240,1536,2494,1552}"
 
 validate_four_values() {
   local label="$1" value="$2"
@@ -138,6 +138,9 @@ export FREETOKEN_CUDA_GRAPH_VERIFY_STEPS="${FREETOKEN_CUDA_GRAPH_VERIFY_STEPS:-8
 export FREETOKEN_DSV41_C2_PREFILL_INTERLEAVE="${FREETOKEN_DSV41_C2_PREFILL_INTERLEAVE:-1}"
 export FREETOKEN_DSV41_AUTHORITY_FUSION="${FREETOKEN_DSV41_AUTHORITY_FUSION:-1}"
 export FREETOKEN_DSV41_TOKEN_BOUNDARY_OVERLAP="${FREETOKEN_DSV41_TOKEN_BOUNDARY_OVERLAP:-1}"
+export FREETOKEN_DSV41_PACKED_KV="${FREETOKEN_DSV41_PACKED_KV:-1}"
+export FREETOKEN_DSV41_PACKED_PREFILL_GLUON="${FREETOKEN_DSV41_PACKED_PREFILL_GLUON:-1}"
+export FREETOKEN_DSV41_PACKED_DECODE_STAGE="${FREETOKEN_DSV41_PACKED_DECODE_STAGE:-1}"
 
 hybrid_rank_args=()
 if [[ -n "${DSV41_MOE_HYBRID_RANKS:-1,2}" ]]; then
@@ -168,10 +171,10 @@ exec "$FREETOKEN_PYTHON" -m freetoken.cli serve \
   --dsv41-engram-ranks "${DSV41_ENGRAM_RANKS:-0,1}" \
   --vision-device "${DSV41_VISION_DEVICE:-3}" \
   --max-running-requests "${DSV41_MAX_RUNNING_REQUESTS:-2}" \
-  --max-seq-len-override "${DSV41_CONTEXT:-786432}" \
+  --max-seq-len-override "${DSV41_CONTEXT:-1048576}" \
   --max-prefill-length "${DSV41_MAX_PREFILL_LENGTH:-8192}" \
-  --num-pages "${DSV41_NUM_PAGES:-6144}" \
-  --swa-full-tokens-ratio "${DSV41_SWA_FULL_TOKENS_RATIO:-0.1875}" \
+  --num-pages "${DSV41_NUM_PAGES:-8192}" \
+  --swa-full-tokens-ratio "${DSV41_SWA_FULL_TOKENS_RATIO:-0.140625}" \
   --memory-ratio "${DSV41_MEMORY_RATIO:-0.90}" \
   --cache-type "${DSV41_CACHE_TYPE:-radix}" \
   --moe-backend "${DSV41_MOE_BACKEND:-hybrid}" \

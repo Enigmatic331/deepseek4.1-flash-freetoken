@@ -6,17 +6,22 @@ on two RTX 5090s, one modified 48 GiB RTX 4090, and one modified 32 GiB RTX
 runs the checkpoint's native vision tower. Authoritative expert and Engram banks
 remain pinned in host RAM, with bounded CPU expert assistance on ranks 1 and 2.
 
-The selected profile advertises 786,432 tokens with BF16 KV, keeps the public
-prefill chunk at 8,192 tokens, and admits at most two concurrent requests through
-the qualified C2 scheduler. Direct P2P is used only between the qualified RTX
-5090 pair. DSpark/MTP is disabled.
+The selected profile advertises 1,048,576 tokens. DeepSeek V4.1 already rounds
+each compressed main-KV row to FP4; the final FreeToken branch stores those
+exact rounded values as E2M1 nibbles plus one E4M3 scale per 16 channels instead
+of expanding them in the persistent pool. The representation unpacks to the
+same BF16 bits, so the capacity gain adds no new numerical approximation. SWA
+remains BF16. The profile keeps the public prefill chunk at 8,192 tokens and
+admits at most two concurrent requests through the qualified C2 scheduler.
+Direct P2P is used only between the qualified RTX 5090 pair. DSpark/MTP is
+disabled.
 
 ## Pinned stack
 
-- Model: `deepseek-ai/DeepSeek-V4.1-Flash`
-- Model revision: `dba1be0a40aa45a94ad051997016db3960a90277`
+- Model: `deepseek-ai/DeepSeek-V4.1-Flash-1017`
+- Model revision: `1bae0e1088993b9b82de08f59de5be5a34e42170`
 - FreeToken branch: <https://github.com/Enigmatic331/FreeToken/tree/dsv41-final-20261016>
-- Qualified FreeToken revision: `2e5eaf5f96d795af21512c54140ffa5263bfb86d`
+- Qualified FreeToken revision: `5b0a6310e69fdc6752b79bf9b974b66b12347aae`
 - Checkpoint: 48 shards, 510,286,023,000 indexed tensor bytes
 
 Exact pins are recorded in [`freetoken.lock`](freetoken.lock).
@@ -25,10 +30,10 @@ Exact pins are recorded in [`freetoken.lock`](freetoken.lock).
 
 | Role | Rank 0 / RTX 5090 | Rank 1 / RTX 5090 | Rank 2 / RTX 4090 | Rank 3 / RTX 4080 SUPER |
 | --- | ---: | ---: | ---: | ---: |
-| Decode-owned experts | 32 | 144 | 144 | 64 |
+| Decode-owned experts | 16 | 136 | 160 | 72 |
 | Prefill-owned experts | 112 | 128 | 112 | 32 |
-| Stored expert range | `0:112` | `32:208` | `144:208` | `288:96` |
-| MoE cache slots | 240 | 1,536 | 2,350 | 1,408 |
+| Stored expert range | `0:112` | `16:224` | `144:208` | `288:96` |
+| MoE cache slots | 240 | 1,536 | 2,494 | 1,552 |
 | Dense/attention/KV authority | yes | no | no | no |
 | Native vision | no | no | no | yes |
 
@@ -40,14 +45,14 @@ configuration rather than committing device identifiers.
 Material runtime geometry:
 
 ```text
-Context:             786,432 tokens
-Full KV pages:       6,144 x 128 tokens, authority only
+Context:             1,048,576 tokens
+Full KV pages:       8,192 x 128 tokens, authority only
 Physical SWA pages:  1,152 x 128 tokens
 Scheduler prefill:   8,192 tokens
 Internal EP tile:    4,096 tokens
 Text ranks:          four
 Concurrency:         at most two requests (qualified C2 path)
-KV / weights:        BF16 KV / native checkpoint quantization
+Main KV / SWA:       exact packed FP4+scale storage / BF16
 Vision:              native checkpoint tower on rank 3's 4080 SUPER
 MTP:                 disabled
 ```
@@ -56,23 +61,23 @@ MTP:                 disabled
 
 These are measurements on the qualified host, not portable promises.
 
-| Gate | Control | Final candidate | Change |
+| Gate | Previous accepted control | Packed-KV 1M | Change |
 | --- | ---: | ---: | ---: |
-| Sustained single-stream decode median | 35.349 tok/s | 35.875 tok/s | +1.49% |
-| 17,490-token cold prefill TTFT | 9.749 s | 9.690 s | -0.60% |
-| Production exact smoke decode | — | 35.731 tok/s | — |
+| Stable single-stream decode mean | 40.222 tok/s | 40.175 tok/s | -0.12% |
+| 4,096-token cold prefill TTFT | 3.912 s | 3.905 s | -0.18% |
+| 17,490-token cold prefill TTFT | 9.814 s | 9.778 s | -0.37% |
+| Near-ceiling prompt | — | 1,040,000 tokens | exact recall |
 
-The final token-boundary change preserved exact outputs, cache integrity,
-cancellation, C2 admission, native vision, and hardware guards. Earlier C2 work
-reduced the resident decoder's maximum pause from 9.807 to 5.317 seconds beside
-a 17.5K prompt and from 13.285 to 4.200 seconds beside a 40K prompt. A 520K
-partner held the resident pause to 4.016 seconds across a 170.91-second prefill.
-The 786K geometry passed near-ceiling, retrieval, cancellation, and concurrent
-400K/496K gates; its minimum observed authority free memory was 1,576.62 MiB.
+The packed profile returned the same short decode hash in three repetitions and
+recalled four planted keys exactly and in order at depths through 935,843 tokens.
+The 1.04M request used 8,126/8,192 main-KV pages, achieved 2,880.4 prompt tok/s,
+and released main KV and SWA immediately afterward. Minimum authority free VRAM
+was 2,288.62 MiB; the hottest DIMM reached 59 C, with no thermal throttle,
+Xid/AER/MCE/EDAC/OOM event, cache leak, or service restart.
 
-See [`docs/qualification-20261016-final.md`](docs/qualification-20261016-final.md)
-and [`results/production-final-20261016.csv`](results/production-final-20261016.csv).
-The older 512K/EP3 reports remain in the repository as historical evidence, not
+See [`docs/qualification-20261021-packed-kv-1m.md`](docs/qualification-20261021-packed-kv-1m.md)
+and [`results/production-packed-kv-1m.csv`](results/production-packed-kv-1m.csv).
+The older 512K, 786K, and ownership reports remain as historical evidence, not
 as current defaults.
 
 ## Deploy
@@ -101,6 +106,9 @@ only when a separate frontend must connect from another network namespace.
 - Do not raise context, KV pages, the 8,192-token scheduler chunk, 4,096-token
   route tile, graph batch size, caches, or concurrency without repeating the full
   correctness, cancellation, memory, and capacity gates.
+- Packed main-KV storage, packed-prefill Gluon, and transient packed-decode
+  staging are one qualified startup profile. Do not toggle its representation
+  while pages or captured graphs are live.
 - Do not assume P2P from GPU model names. Reverify pairwise payload integrity and
   bandwidth after any driver, kernel, BIOS, motherboard, riser, or slot change.
 - Only the RTX 5090 pair is expected to use P2P. RTX 4090/4080 edges retain the

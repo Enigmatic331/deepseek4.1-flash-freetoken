@@ -3,7 +3,7 @@ set -euo pipefail
 
 base_url="${DSV41_BASE_URL:-http://127.0.0.1:8080}"
 model="${DSV41_MODEL:-DeepSeek (Experimental)}"
-context="${DSV41_CONTEXT:-786432}"
+context="${DSV41_CONTEXT:-1048576}"
 
 curl --fail --silent --show-error "$base_url/health"
 echo

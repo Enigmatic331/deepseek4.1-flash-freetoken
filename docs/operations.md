@@ -23,7 +23,7 @@ DSV41_CONFIG=/etc/deepseek41-flash-freetoken.env scripts/preflight.sh
 
 ## Acceptance gate
 
-1. `/health` and `/v1/models` respond and advertise 786,432 tokens.
+1. `/health` and `/v1/models` respond and advertise 1,048,576 tokens.
 2. A deterministic thinking-disabled sentinel returns exactly once.
 3. Accepted short, arithmetic/code, and retrieval outputs match exactly.
 4. Native image OCR returns the expected fixture value.
@@ -39,17 +39,18 @@ Performance without these gates is diagnostic rather than accepted.
 
 ## Qualified defaults
 
-- Context: 786,432 tokens
+- Context: 1,048,576 tokens
 - Concurrency: at most two requests
-- Full KV: 6,144 pages of 128 tokens on rank 0 only
-- SWA: 1,152 physical pages (`swa_full_tokens_ratio=0.1875`)
-- KV dtype: BF16
+- Full KV: 8,192 pages of 128 tokens on rank 0 only
+- SWA: 1,152 physical pages (`swa_full_tokens_ratio=0.140625`)
+- Main-KV storage: exact E2M1 nibbles plus E4M3-per-16 scales
+- SWA dtype: BF16
 - Scheduler prefill chunk: 8,192 tokens
 - Exact EP route tile: 4,096 tokens
-- Expert caches: 240 / 1,536 / 2,350 / 1,408
-- Decode ownership: 32 / 144 / 144 / 64
+- Expert caches: 240 / 1,536 / 2,494 / 1,552
+- Decode ownership: 16 / 136 / 160 / 72
 - Prefill ownership: 112 / 128 / 112 / 32
-- Stored intervals: 0:112 / 32:208 / 144:208 / 288:96
+- Stored intervals: 0:112 / 16:224 / 144:208 / 288:96
 - Engram ranks: 0 and 1
 - CPU assistance: ranks 1/2, 24 threads each, one-fetch/one-miss ceiling
 - Native vision: logical device 3, also text rank 3
@@ -81,10 +82,15 @@ large model.
 
 ## Capacity guardrails
 
-The qualified 786K complex run reached 1,576.62 MiB minimum authority free memory.
-Do not simultaneously increase KV pages, authority cache, prefill chunk, route
-tile, graph batch size, or concurrency. Change one variable and repeat exact,
-image, cancellation, C2-isolation, and capacity gates.
+The qualified 1M packed-KV run reached 2,288.62 MiB minimum authority free memory
+and 8,126/8,192 pages. Do not simultaneously increase KV pages, authority cache,
+prefill chunk, route tile, graph batch size, or concurrency. Change one variable
+and repeat exact, image, cancellation, C2-isolation, and capacity gates.
+
+Do not disable or mix the three packed-KV startup switches independently in the
+documented profile. Persistent packed storage, packed-prefill Gluon, and transient
+decode staging were qualified together, and the representation cannot change
+under live pages or captured graphs.
 
 Extra memory on an expert worker cannot extend rank 0's KV without a new
 attention/KV ownership protocol. This profile does not claim KV sharding.
@@ -94,7 +100,7 @@ attention/KV ownership protocol. This profile does not claim KV sharding.
 - **Startup peer-access error:** disable P2P, verify visible-device order, and
   rerun pairwise tests. Never force P2P on RTX 4090/4080 edges.
 - **Long-prefill OOM:** restore the documented caches, 8,192 scheduler chunk,
-  4,096 route tile, 256 MiB indexer cap, and 6,144 pages.
+  4,096 route tile, 256 MiB indexer cap, and 8,192 pages.
 - **Slow prefill:** verify RTX 5090 P2P was selected, grouped packed transport is
   enabled, and no stale process owns a peer context or VRAM.
 - **C2 stall:** check the interleave/tail/cone startup fingerprints and ordered

@@ -11,10 +11,10 @@ The workload uses distinct prefill and decode ownership:
 
 | Rank | Device class | Prefill experts | Decode experts | Stored interval | Cache slots |
 | ---: | --- | ---: | ---: | --- | ---: |
-| 0 | RTX 5090 authority | 112 | 32 | `[0,112)` | 240 |
-| 1 | RTX 5090 worker | 128 | 144 | `[32,240)` | 1,536 |
-| 2 | modified RTX 4090 48 GiB | 112 | 144 | `[144,352)` | 2,350 |
-| 3 | modified RTX 4080 SUPER 32 GiB | 32 | 64 | `[288,384)` | 1,408 |
+| 0 | RTX 5090 authority | 112 | 16 | `[0,112)` | 240 |
+| 1 | RTX 5090 worker | 128 | 136 | `[16,240)` | 1,536 |
+| 2 | modified RTX 4090 48 GiB | 112 | 160 | `[144,352)` | 2,494 |
+| 3 | modified RTX 4080 SUPER 32 GiB | 32 | 72 | `[288,384)` | 1,552 |
 
 Overlapping storage lets ownership change at the phase boundary without rereading
 the complete expert bank. Grouped packed transport returns only routed outputs.
@@ -22,18 +22,27 @@ Host RAM is both the pinned authoritative weight tier and the source for bounded
 CPU assistance: two disjoint 24-thread pools serve ranks 1 and 2, with one GPU
 fetch plus at most one CPU-computed miss per layer under the accepted policy.
 
-## KV and the 786K boundary
+## Exact packed KV and the 1M boundary
 
 Only rank 0 owns physical attention KV. Expert-only ranks retain metadata-only
-pools. The 6,144 full pages at 128 tokens/page provide the 786,432-token ceiling.
-The SWA ratio of 0.1875 retains 1,152 physical SWA pages. KV remains BF16; no KV
-quantization was introduced to reach this ceiling.
+pools. DeepSeek V4.1 rounds every 512-channel compressed main-KV row to E2M1 FP4
+with one E4M3 scale per 16 channels before it enters the cache. Earlier FreeToken
+expanded those already-rounded values into 1,024 BF16 bytes per row. The final
+branch stores 256 bytes of nibbles plus 32 scale bytes and can reconstruct the
+same BF16 bits, including signed zero. This shrinks persistent compressed main-KV
+storage by about 3.6x without adding another quantization step.
 
-The 786K qualification compared the geometry against 524K using exact short and
-complex multi-hop/retrieval fixtures, cancellation, C2 isolation, cached follow-up,
-and concurrent 400K/496K workloads. Minimum observed authority free memory fell
-from 2,694.62 MiB at 524K to 1,576.62 MiB at 786K. A 1M geometry was functional
-but did not preserve the accepted production margin.
+The 8,192 main pages at 128 tokens/page provide the 1,048,576-token ceiling. SWA
+remains BF16 and fixed at 1,152 physical pages through the 0.140625 ratio. Packed
+prefill uses the qualified Gluon path; graph-captured M=1 decode expands only the
+selected rows into a transient BF16 staging slab and then reuses the original
+attention order.
+
+The capacity gate used a cold 1,040,000-token prompt with planted keys at four
+depths. It returned every key exactly and in order, peaked at 8,126/8,192 pages,
+and left 2,288.62 MiB free on the authority GPU. The packed 1M profile preserved
+short output hashes and decode/prefill performance within measurement noise of
+the accepted packed 786K control.
 
 Workspace control still depends on:
 
@@ -87,6 +96,8 @@ The final branch includes the accumulated exact-output work through 2026-10-16:
 - C2 bounded prefill interleave;
 - authority-side M=1/M=2 fusion;
 - token-boundary metadata overlap;
+- exact packed FP4+scale main-KV storage, packed-prefill Gluon, and transient
+  BF16 decode staging;
 - MoE hot-path statistics collection disabled; cache reporting retained.
 
 ## Correctness boundary
@@ -98,13 +109,15 @@ The final branch includes the accumulated exact-output work through 2026-10-16:
 - CUDA graphs are qualified through batch size two only.
 - Native vision remains on rank 3 and follows the same ordered control protocol.
 - MTP remains disabled.
+- Main-KV packing is startup-only and must not change under live pages or
+  captured graphs; SWA remains BF16.
 - Capacity, cache, route, graph, topology, quant, or concurrency changes require
   exact text/code/retrieval, native-image, cancellation, cache-integrity, and
   long-context gates before performance acceptance.
 
 ## Current bottleneck
 
-The final single-stream median is 35.875 tok/s, or about 27.87 ms/token. Remaining
+The packed 1M profile sustains about 40.175 tok/s, or 24.891 ms/token. Remaining
 time is spread across backbone/attention/router work, routed experts and host
 refill, collectives/authority work, and token-boundary orchestration. The profile
 is no longer explained by one unambiguously dominant copy alone. Additional VRAM
