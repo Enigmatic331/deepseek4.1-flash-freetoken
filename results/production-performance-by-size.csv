@@ -1,0 +1,6 @@
+profile,measurement_date,workload,prompt_tokens,ttft_s,effective_prefill_tok_s,decode_tok_s,prefill_batches,cache_state,measurement_note,correctness
+packed_kv_1m,2026-10-21,cold_prefill_4k,4096,3.905436665,1048.8,,1,cold_uncached,one accepted measurement after size-matched warmup,exact_output
+packed_kv_1m,2026-10-21,cold_prefill_17490,17490,9.777848837,1788.7,,2,cold_uncached,one accepted measurement after size-matched warmup,exact_output
+packed_kv_1m,2026-10-21,cold_prefill_40k,40000,13.891060204,2879.5,,5,cold_uncached,one accepted measurement after size-matched warmup,exact_output
+packed_kv_1m,2026-10-21,near_ceiling_retrieval,1040000,361.061,2880.4,,127,cold_uncached,one capacity-and-retrieval measurement,three_keys_exact_and_ordered
+packed_kv_1m,2026-10-21,stable_short_context_decode,,,,40.175,,not_applicable,mean of three identical-hash repetitions,exact_hash_3_repetitions

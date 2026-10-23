@@ -68,8 +68,22 @@ These are measurements on the qualified host, not portable promises.
 | 17,490-token cold prefill TTFT | 9.814 s | 9.778 s | -0.37% |
 | Near-ceiling prompt | — | 1,040,000 tokens | exact recall |
 
+Effective prefill is not one fixed number; it depends strongly on the submitted
+prompt size and resulting scheduler batches:
+
+| Submitted prompt | TTFT | Effective prefill |
+| ---: | ---: | ---: |
+| 4,096 tokens | 3.9054 s | **1,048.8 tok/s** |
+| 17,490 tokens | 9.7778 s | **1,788.7 tok/s** |
+| 40,000 tokens | 13.8911 s | **2,879.5 tok/s** |
+| 1,040,000 tokens | 361.061 s | **2,880.4 tok/s** |
+
+See [`docs/performance.md`](docs/performance.md) for metric definitions, chunk
+shapes, decode performance, interpretation limits, and the practical explanation
+for why larger submissions achieve higher effective prefill throughput.
+
 The packed profile returned the same short decode hash in three repetitions and
-recalled four planted keys exactly and in order at depths through 935,843 tokens.
+recalled three planted keys exactly and in order at depths through 935,843 tokens.
 The 1.04M request used 8,126/8,192 main-KV pages, achieved 2,880.4 prompt tok/s,
 and released main KV and SWA immediately afterward. Minimum authority free VRAM
 was 2,288.62 MiB; the hottest DIMM reached 59 C, with no thermal throttle,

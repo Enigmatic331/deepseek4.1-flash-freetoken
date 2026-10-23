@@ -41,10 +41,14 @@ staging were qualified together at a 1,048,576-token context. SWA remains BF16.
 The three short-decode repetitions had the same output hash. The small decode
 and prefill differences are within measurement noise.
 
+For the derived prompt-rate curve, scheduler batch shapes, and interpretation
+limits, see [`performance.md`](performance.md).
+
 ## Near-ceiling correctness and capacity
 
 A cold 1,040,000-token prompt planted unique keys at token depths 103,116,
-519,480, and 935,843. The completion returned all keys exactly and in order.
+519,480, and 935,843. The completion returned all three keys exactly and in
+order.
 
 - TTFT: 361.061 seconds
 - aggregate prompt rate: 2,880.4 tok/s
@@ -64,4 +68,3 @@ representation under live pages or captured CUDA graphs. Any change to packed
 sources, page count, SWA ratio, prefill/decode kernels, cache allocation, or
 concurrency requires the same exact-output, cancellation, native-image,
 near-ceiling, cleanup, and hardware-error gates.
-

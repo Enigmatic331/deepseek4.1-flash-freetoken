@@ -38,7 +38,7 @@ prefill uses the qualified Gluon path; graph-captured M=1 decode expands only th
 selected rows into a transient BF16 staging slab and then reuses the original
 attention order.
 
-The capacity gate used a cold 1,040,000-token prompt with planted keys at four
+The capacity gate used a cold 1,040,000-token prompt with planted keys at three
 depths. It returned every key exactly and in order, peaked at 8,126/8,192 pages,
 and left 2,288.62 MiB free on the authority GPU. The packed 1M profile preserved
 short output hashes and decode/prefill performance within measurement noise of

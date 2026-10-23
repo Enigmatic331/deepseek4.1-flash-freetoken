@@ -4,7 +4,7 @@ stable_decode_ms_per_token,,24.891,,identical_hash_3_repetitions
 cold_prefill_4096_ttft_s,3.9124,3.905,-0.18%,exact_uncached
 cold_prefill_17490_ttft_s,9.8140,9.778,-0.37%,exact_uncached
 cold_prefill_40000_ttft_s,,13.891,,exact_uncached
-capacity_prompt_tokens,,1040000,,four_planted_keys_exact_and_ordered
+capacity_prompt_tokens,,1040000,,three_planted_keys_exact_and_ordered
 capacity_ttft_s,,361.061,,normal_stop
 capacity_prompt_tok_s,,2880.4,,normal_stop
 capacity_main_kv_pages,,8126/8192,,released_to_zero
