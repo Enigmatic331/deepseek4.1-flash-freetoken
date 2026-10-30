@@ -1,0 +1,10 @@
+gate,control,candidate,unit,verdict
+cold_40k_ttft,35.6911,33.2262,seconds,pass
+cold_40k_effective_prefill,,1203.87,tokens_per_second,pass_three_exact_repeats
+near_capacity_506k_ttft,520.0370,517.8711,seconds,pass_exact_retrieval
+near_capacity_main_kv_pages,,3954/4096,pages,pass_clean_zero_return
+short_context_decode,21.4281,21.3776,tokens_per_second,pass_within_one_percent
+sm80_real_bank_kernel,39.5837,35.3864,milliseconds,pass_byte_identical_bf16
+soak_duration,,30,minutes,pass_zero_terminal_faults
+soak_max_gpu_temperature,,70,celsius,pass
+soak_max_dimm_temperature,,56,celsius,pass

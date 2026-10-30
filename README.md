@@ -1,5 +1,11 @@
 # DeepSeek V4.1 Flash on FreeToken
 
+This repository preserves more than one accepted machine topology. The
+top-level deployment below is the 2026-10-21 packed-KV 1M RTX profile; it is
+kept intact as reproducible engineering history. See the
+[`topologies/`](topologies/README.md) catalog for frozen alternatives, including
+the 2026-10-30 dual-CMP 512K resident-r3 production topology.
+
 Reproducible deployment profile for the official DeepSeek-V4.1-Flash checkpoint
 on two RTX 5090s, one modified 48 GiB RTX 4090, and one modified 32 GiB RTX
 4080 SUPER. All four GPUs are text expert-parallel ranks. The 4080 SUPER also
