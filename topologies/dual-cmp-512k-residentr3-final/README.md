@@ -15,16 +15,23 @@ path without materially regressing decode.
 ## Source pin
 
 - FreeToken branch: [`dsv41-512k-residentr3-final`](https://github.com/Enigmatic331/FreeToken/tree/dsv41-512k-residentr3-final)
-- Qualified commit: [`7663e3a24e9e35b80e09a20df0f336d204df6cd3`](https://github.com/Enigmatic331/FreeToken/commit/7663e3a24e9e35b80e09a20df0f336d204df6cd3)
+- Qualified closeout commit: [`1540553eff3323b38c15f8c8e3c662f69f152cf1`](https://github.com/Enigmatic331/FreeToken/commit/1540553eff3323b38c15f8c8e3c662f69f152cf1)
 - Base commit: `5b0a6310e69fdc6752b79bf9b974b66b12347aae`
 - Model: `deepseek-ai/DeepSeek-V4.1-Flash-1017`
 
 Machine-readable source and capacity pins are in [`topology.lock`](topology.lock).
 
-The release commit contains the seven qualified source/test changes only. It
-adds the SM89 decode policy, active-prefill subgroup broadcast, pairwise packed
-prefill route communicators, the architecture-gated SM80 FP4 prefill launch
-policy, and their policy tests.
+The branch contains the seven qualified source/test changes plus the final
+production documentation and boot-prewarm hardening. It adds the SM89 decode
+policy, active-prefill subgroup broadcast, pairwise packed prefill route
+communicators, the architecture-gated SM80 FP4 prefill launch policy, and their
+policy tests.
+
+The final host qualification also uses the external `gpu-unlock/1.1.1` kernel
+adjunct, restricted to the exact RTX 4090 and RTX 4080 SUPER PCI functions. The
+AD103 path is explicitly experimental; wildcard targeting is not accepted.
+Exact-UUID RM readback must report `fmla32=0`, `imla2=0`, and `imla4=0` on both
+cards after every boot.
 
 ## Frozen placement
 
@@ -69,6 +76,9 @@ Measurements are specific to the qualified host and cold-cache conditions.
 | Near-capacity 506K TTFT | 520.0370 s | 517.8711 s | -0.42% |
 | Short-context decode | 21.4281 tok/s | 21.3776 tok/s median | -0.24% |
 | SM80 real-bank kernel fixture | 39.5837 ms | 35.3864 ms | -10.60% |
+| Dual-Ada cold 40K TTFT | 33.2262 s stock-rate final | 31.8289 s median | -4.21% |
+| Dual-Ada cold 40K effective prefill | 1,203.87 tok/s | 1,256.72 tok/s | +4.39% |
+| Dual-Ada short-context decode | 21.3776 tok/s | 21.5084 tok/s | +0.61% |
 
 The 40K mean TTFT 95% interval was 33.1110-33.3578 seconds. The 506K gate used
 3,954/4,096 main-KV pages, returned the planted retrieval exactly, recorded zero
@@ -82,6 +92,13 @@ observed HTTP 503 before terminal acknowledgement; the same instance reached
 fully idle zero-accounting state seconds later. This is accepted as bounded slow
 cancellation, not instantaneous cancellation.
 
+The dual-Ada 40K result is three exact repeats with a 31.7950-31.8537 s mean
+95% interval. All repeats returned the same exact response hash, recorded zero
+static-CMP misses, cleaned KV/SWA to zero, and stayed within 68 C GPU / 56 C
+DIMM maxima. The decode result is effectively flat versus the 4090-only unlock
+(-0.13%), so the additional RTX 4080 SUPER unlock is retained for its measured
+prefill benefit rather than a decode claim.
+
 Machine-readable headline values are in [`results.csv`](results.csv).
 
 ## Production behavior
@@ -91,6 +108,11 @@ prewarm certificate, a stable socket-proxied ingress for local applications, and
 a two-strike watchdog. The ingress remains closed until model identity, context
 capacity, sampler warmup, exact ORBIT gates, and post-request KV/SWA cleanup all
 pass. See [`operations.md`](operations.md) for the boot and recovery contract.
+
+The release closeout also removes a boot ordering cycle: the model unit pulls
+only prewarm, while the separately enabled ingress socket waits for prewarm.
+Prewarm receipts use per-process temporary names before atomic replacement, so
+a stale privileged temporary file cannot block the next certificate.
 
 ## Boundaries
 

@@ -8,3 +8,6 @@ sm80_real_bank_kernel,39.5837,35.3864,milliseconds,pass_byte_identical_bf16
 soak_duration,,30,minutes,pass_zero_terminal_faults
 soak_max_gpu_temperature,,70,celsius,pass
 soak_max_dimm_temperature,,56,celsius,pass
+dual_ada_cold_40k_ttft,33.2262,31.8289,seconds,pass_three_exact_repeats
+dual_ada_cold_40k_effective_prefill,1203.87,1256.72,tokens_per_second,pass_three_exact_repeats
+dual_ada_short_context_decode,21.3776,21.5084,tokens_per_second,pass_exact
